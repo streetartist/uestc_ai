@@ -1,6 +1,6 @@
 Flask>=3.0,<4
 gunicorn>=22.0,<24
-Flask-Cors>=4.0,<5
+Flask-Cors>=6.0.5,<7
 Flask-SQLAlchemy>=3.1,<4
 Flask-Migrate>=4.0,<5
 SQLAlchemy>=2.0,<3
