@@ -1,0 +1,458 @@
+/* Shared visual language for the public archive and the workspaces. */
+.app-shell {
+  --paper: #f7f8f2;
+  --paper-2: #edf1e9;
+  --surface: #fffefa;
+  --ink: #26382c;
+  --ink-2: #354b3b;
+  --muted: #596b5e;
+  --quiet: #6c7a6e;
+  --line: #dce5d9;
+  --line-dark: #acbeaa;
+  --coral: #4e7154;
+  --coral-dark: #365a40;
+  --sage: #789473;
+  --sand: #a68961;
+  --display-font: "Microsoft YaHei UI", "PingFang SC", "Segoe UI", sans-serif;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--ink);
+}
+
+.app-shell .app-main { background: var(--paper); }
+.app-shell .app-sidebar,
+.app-shell .app-topbar {
+  background: #fff;
+  border-color: #e6e9e2;
+}
+.app-shell .brand-lockup strong {
+  font-family: var(--display-font);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.app-shell .brand-lockup small { color: var(--muted); letter-spacing: .06em; }
+.app-shell .app-nav a { color: var(--muted); }
+.app-shell .app-nav a:is(:hover, .active) { color: var(--coral-dark); }
+.app-shell .app-nav a.active { box-shadow: inset 0 -2px var(--sage); }
+.app-shell .sidebar-login,
+.app-shell .primary-button { background: var(--ink); border-color: var(--ink); color: #fff; }
+.app-shell .sidebar-login:hover,
+.app-shell .primary-button:hover { background: var(--coral-dark); border-color: var(--coral-dark); }
+.app-shell .outline-button { border-color: var(--line-dark); color: var(--ink); }
+.app-shell .outline-button:hover { background: var(--paper-2); border-color: var(--coral-dark); }
+.app-shell .text-button:hover { color: var(--coral-dark); }
+.app-shell .icon-button:hover { background: var(--paper-2); }
+.app-shell .account-avatar { background: var(--coral-dark); }
+.app-shell .status-live { background: #e4eee1; color: #365a40; }
+.app-shell .status-warm { background: #f2eadc; color: #755c34; }
+.app-shell .status-muted { background: #ecefe9; color: #596b5e; }
+.app-shell .segmented-control button.selected { background: var(--ink); color: #fff; }
+.app-shell .form-field :is(input, select, textarea):focus { border-color: var(--coral); }
+.app-shell :is(button, a, input, select, textarea):focus-visible { outline-color: var(--coral); }
+
+.public-shell .page-title-band,
+.workspace-shell .page-title-band {
+  min-height: 174px;
+  padding-top: 34px;
+  padding-bottom: 35px;
+  border-color: var(--line);
+  background: #eef2e9;
+}
+.public-shell .page-title-band h1,
+.workspace-shell .page-title-band h1 {
+  max-width: 1100px;
+  color: var(--ink);
+  font-family: var(--display-font);
+  font-size: clamp(34px, 3.8vw, 54px);
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.18;
+}
+.app-shell .page-title-band .eyebrow,
+.app-shell .eyebrow,
+.app-shell .mono-label {
+  color: var(--coral-dark);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .1em;
+}
+.public-shell:not(:has(.home-updates)) .app-content { max-width: 1400px; }
+.public-shell:not(:has(.home-updates)) .page-intro {
+  align-items: flex-end;
+  margin-bottom: 32px;
+  padding-bottom: 25px;
+  border-color: var(--line);
+}
+.public-shell:not(:has(.home-updates)) .page-intro > p {
+  max-width: 760px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.7;
+}
+.app-shell .section-header { border-color: var(--ink); }
+.app-shell .section-header h2,
+.app-shell .competition-main h2,
+.app-shell .article-archive h2,
+.app-shell .work-archive-copy h2,
+.app-shell .problem-heading h3,
+.app-shell .track-directory h3,
+.app-shell .detail-section h2,
+.app-shell .auth-note h2,
+.app-shell .about-statement {
+  color: var(--ink);
+  font-family: var(--display-font);
+  font-weight: 650;
+  letter-spacing: 0;
+}
+.app-shell .section-header h2 { font-size: clamp(28px, 3vw, 42px); }
+.app-shell .section-header > a { color: var(--ink); }
+.app-shell .section-header > a:hover { color: var(--coral-dark); }
+
+/* Archive pages keep the homepage's open, scannable rows. */
+.public-shell :is(.competition-list, .article-archive, .work-archive-list, .problem-directory.standalone, .leaderboard-table) { border-color: var(--line-dark); }
+.public-shell :is(.competition-row, .article-archive > a, .work-archive-list > a, .problem-directory.standalone > a, .leaderboard-row) {
+  border-color: var(--line);
+  transition: background-color 180ms ease, padding-left 180ms ease;
+}
+.public-shell :is(.competition-row, .article-archive > a, .work-archive-list > a, .problem-directory.standalone > a):is(:hover, :focus-visible) {
+  background: #edf2e9;
+  padding-left: 14px;
+}
+.public-shell :is(.competition-index, .work-archive-index, .article-kind) { color: var(--coral-dark); }
+.public-shell :is(.competition-main p, .article-archive p, .work-archive-copy p, .problem-directory p) {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+.public-shell :is(.competition-meta span, .problem-facts, .work-archive-copy > span, .article-archive time, .article-archive small) { color: var(--quiet); }
+.public-shell .problem-code-block { background: var(--ink); color: #fff; }
+.public-shell .work-version-count > svg { color: var(--coral-dark); }
+.public-shell .leaderboard-row:hover { background: #edf2e9; }
+
+/* Detail pages use the same canvas and hierarchy as archive pages. */
+.public-detail-shell {
+  --detail-ink: var(--ink);
+  --detail-muted: var(--muted);
+  --detail-line: var(--line);
+  --detail-panel: #edf2e9;
+}
+.public-detail-shell .app-main { background: var(--paper); }
+.public-detail-shell .app-sidebar,
+.public-detail-shell .app-topbar { background: #fff; border-color: #e6e9e2; }
+.public-detail-shell .page-title-band {
+  min-height: 210px;
+  border-color: var(--line);
+  background: #eef2e9;
+}
+.public-detail-shell .page-title-band h1 {
+  color: var(--ink);
+  font-family: var(--display-font);
+  font-size: clamp(34px, 3.8vw, 54px);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.public-detail-shell .page-title-band .eyebrow { color: var(--coral-dark); letter-spacing: .1em; }
+.public-detail-shell .page-title-actions :is(.outline-button, .primary-button) { border-radius: 6px; }
+.public-detail-shell :is(.competition-overview, .track-overview, .problem-summary) {
+  border-color: var(--line);
+  border-radius: 8px;
+  background: #edf2e9;
+}
+.public-detail-shell :is(.date-grid, .track-overview dl, .facts-list, .article-layout > aside, .work-aside section) {
+  border-color: var(--line);
+  border-radius: 8px;
+  background: #f4f7f0;
+}
+.public-detail-shell :is(.track-directory > a, .problem-directory > a, .requirement-list > div) {
+  border-radius: 6px;
+  border-color: var(--line);
+}
+.public-detail-shell :is(.track-directory > a, .problem-directory > a):is(:hover, :focus-visible) { background: #e9f0e5; }
+.public-detail-shell :is(.rule-band, .submit-callout) { border-radius: 8px; }
+.public-detail-shell :is(.work-main, .article-layout > aside) { border-radius: 8px; }
+.public-detail-shell .work-header { background: #edf2e9; }
+.public-detail-shell .markdown-body pre { border-radius: 6px; }
+.public-detail-shell .problem-code-block { background: #dfeade; color: var(--coral-dark); }
+
+.public-shell .about-page {
+  min-height: 0;
+  padding: clamp(28px, 4vw, 56px) 0;
+  border-radius: 0;
+  border-top: 1px solid var(--line-dark);
+  background: transparent;
+  color: var(--ink);
+}
+.public-shell .about-page .about-statement { font-family: var(--display-font); letter-spacing: 0; }
+.public-shell .about-page .about-copy p { color: var(--muted); }
+
+/* The working screens share the public typography while retaining their dense layout. */
+.workspace-shell .page-title-band { min-height: 134px; }
+.workspace-shell .page-title-band h1 { font-size: clamp(30px, 3vw, 42px); }
+.workspace-shell :is(.manage-form-header h2, .compact-form h3, .confirm-dialog h2) {
+  font-family: var(--display-font);
+  font-weight: 650;
+  letter-spacing: 0;
+}
+.workspace-shell :is(.form-panel, .content-card, .submission-card, .work-card, .news-card, .competition-card, .auth-form) { border-color: var(--line); border-radius: 6px; }
+.workspace-shell :is(.manage-create-band, .problem-editor-guide) { border-color: var(--line); border-radius: 6px; background: #edf2e9; }
+
+/* Reading scale: larger copy without enlarging compact badges or tool icons. */
+.app-shell .app-nav a,
+.app-shell :is(.primary-button, .outline-button, .text-button, .danger-button),
+.app-shell .segmented-control button { font-size: 15px; }
+.app-shell .topbar-context { font-size: 13px; }
+.app-shell .section-header > a { font-size: 15px; }
+.app-shell .status-pill { font-size: 13px; }
+.app-shell :is(.page-state strong, .page-state span, .empty-state p, .sign-in-required p) {
+  font-size: 15px;
+  line-height: 1.6;
+}
+.public-shell:not(:has(.home-updates)) .page-intro > p { font-size: 16px; line-height: 1.75; }
+.public-shell :is(.competition-main h2, .article-archive h2) { font-size: 27px; line-height: 1.3; overflow-wrap: anywhere; }
+.public-shell :is(.work-archive-copy h2, .problem-heading h3, .track-directory h3) { font-size: 24px; line-height: 1.35; }
+.public-shell :is(.competition-main p, .article-archive p, .work-archive-copy p, .problem-directory p, .track-directory p) {
+  font-size: 16px;
+  line-height: 1.7;
+}
+.public-shell :is(.competition-meta span, .problem-facts, .work-archive-copy > span, .article-archive time, .article-archive small, .work-archive-list time, .leaderboard-head) {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.public-shell .leaderboard-row :is(strong, span) { font-size: 14px; line-height: 1.5; }
+.public-shell .leaderboard-controls :is(label > span, p) { font-size: 14px; }
+.public-shell .work-version-count :is(strong, span) { font-size: 14px; }
+.public-shell .auth-note > p { font-size: 16px; line-height: 1.7; }
+.public-shell .about-page .about-copy p { font-size: 18px; line-height: 1.7; }
+
+.app-shell .markdown-body { max-width: 76ch; }
+.app-shell .markdown-body :is(h1, h2, h3) { font-family: var(--display-font); font-weight: 650; line-height: 1.3; }
+.app-shell .markdown-body h1 { font-size: 32px; }
+.app-shell .markdown-body h2 { font-size: 25px; }
+.app-shell .markdown-body h3 { font-size: 20px; }
+.app-shell .markdown-body :is(p, li, blockquote),
+.public-detail-shell .markdown-body :is(p, li, blockquote) {
+  font-size: 16px;
+  line-height: 1.85;
+}
+.app-shell .markdown-body :is(code, table) { font-size: 14px; }
+.app-shell .markdown-body pre code { font-size: 14px; }
+.public-detail-shell :is(.date-grid dd, .track-overview dd, .facts-list dd, .article-layout dd, .work-aside dd, .requirement-list strong, .rubric-list > div) {
+  font-size: 15px;
+  line-height: 1.6;
+}
+.public-detail-shell :is(.date-grid dt, .track-overview dt, .facts-list dt, .article-layout dt, .work-aside dt, .requirement-list small) { font-size: 13px; }
+.public-detail-shell :is(.competition-overview > div > p, .track-overview p, .problem-summary p) { line-height: 1.7; }
+
+.workspace-shell :is(.form-field > span, .form-field > span:first-child, .leaderboard-controls label > span, .markdown-editor-label label) { font-size: 15px; }
+.workspace-shell :is(.form-field small, .inline-alert, .score-import-note, .manage-competition-list p, .review-lock-panel p) {
+  font-size: 14px;
+  line-height: 1.65;
+}
+.workspace-shell :is(.manage-competition-list h2, .review-work h2, .reviewer-weight-panel h2) {
+  font-family: var(--display-font);
+  font-size: 26px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+.workspace-shell :is(.admin-tabs a, .reviewer-identity strong, .managed-problems strong, .admin-user-list strong, .score-batch-list strong, .audit-list strong) { font-size: 14px; }
+.workspace-shell :is(.review-materials dt, .review-materials dd, .admin-user-list div:nth-child(2) > span, .audit-list time, .audit-list span, .audit-list code, .audit-list small) { font-size: 13px; line-height: 1.5; }
+
+.public-shell:has(.home-updates) {
+  --home-body-size: 16px;
+  --home-label-size: 12px;
+}
+.public-shell:has(.home-updates) .hero-description { font-size: 16px; line-height: 1.75; }
+.public-shell:has(.home-updates) .hero-statement { font-size: 18px; line-height: 1.5; }
+.public-shell:has(.home-updates) :is(.news-showcase .update-card p, .manifesto-card p, .flagship-section .track-card p) { font-size: 16px; line-height: 1.6; }
+.public-shell:has(.home-updates) .news-showcase .update-card-top :is(time, span) { font-size: 13px; }
+.public-shell:has(.home-updates) .flagship-section .track-card footer { font-size: 14px; }
+.public-shell .footer-column a,
+.public-shell .footer-brand p { font-size: 14px; line-height: 1.6; }
+
+/* Keep the homepage balanced when news and competition data are unavailable. */
+.public-shell:has(.home-updates) .home-updates {
+  padding-top: 56px;
+  padding-bottom: 48px;
+}
+.public-shell:has(.home-updates) .home-updates .section-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 0;
+  margin-bottom: 30px;
+  text-align: left;
+}
+.public-shell:has(.home-updates) .home-updates .section-header .eyebrow { justify-content: flex-start; }
+.public-shell:has(.home-updates) .home-updates .section-header h2 {
+  font-size: 44px;
+  letter-spacing: 0;
+  line-height: 1.12;
+}
+.public-shell:has(.home-updates) .home-updates .section-header > a {
+  position: static;
+  align-self: end;
+  margin: 0 0 4px;
+  white-space: nowrap;
+}
+.public-shell:has(.home-updates) .updates-fallback {
+  grid-template-columns: minmax(0, 1.2fr) repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 24px;
+  margin-top: 0;
+}
+.public-shell:has(.home-updates) .updates-fallback-feature {
+  align-self: center;
+  min-height: 0;
+  padding: 0 16px 0 0;
+}
+.public-shell:has(.home-updates) .updates-fallback-feature h3 {
+  max-width: none;
+  margin: 16px 0 12px;
+  font-size: 36px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+.public-shell:has(.home-updates) .updates-fallback-feature p {
+  margin-bottom: 16px;
+  font-size: 16px;
+  line-height: 1.7;
+}
+.public-shell:has(.home-updates) .updates-fallback-feature :is(a, button) { font-size: 15px; }
+.public-shell:has(.home-updates) .updates-fallback-link {
+  min-height: 242px;
+  padding: 26px;
+}
+.public-shell:has(.home-updates) .updates-fallback-link strong {
+  font-size: 30px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+.public-shell:has(.home-updates) .home-manifesto { padding-top: 0; }
+.public-shell:has(.home-updates) .home-sections { padding-bottom: 44px; }
+.public-shell:has(.home-updates) .home-sections .home-section:last-child { margin-bottom: 0; }
+.public-shell:has(.home-updates) .home-sections .section-header h2 { font-size: 42px; letter-spacing: 0; line-height: 1.15; }
+.public-shell:has(.home-updates) .flagship-section:has(.state-error) { margin-bottom: 48px; }
+.public-shell:has(.home-updates) .split-section:not(:has(.deadline-block)) { grid-template-columns: minmax(0, 1fr); }
+.public-shell:has(.home-updates) .home-sections .page-state {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-content: center;
+  justify-items: start;
+  gap: 4px 14px;
+  min-height: 134px;
+  padding: 22px 0;
+  border-top: 1px solid var(--line) !important;
+  border-bottom: 1px solid var(--line) !important;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+}
+.public-shell:has(.home-updates) .home-sections .page-state > svg {
+  grid-row: 1 / 3;
+  align-self: center;
+}
+.public-shell:has(.home-updates) .home-sections .page-state > :is(strong, span, button) { grid-column: 2; }
+.public-shell:has(.home-updates) .home-sections .page-state strong { font-size: 17px; }
+.public-shell:has(.home-updates) .home-sections .page-state span { font-size: 15px; }
+.public-shell:has(.home-updates) .app-footer-rich {
+  min-height: 0;
+  padding-top: 48px;
+}
+.public-shell:has(.home-updates) .footer-main { min-height: 0; padding-bottom: 32px; }
+.public-shell:has(.home-updates) .footer-brand strong,
+.public-shell:has(.home-updates) .footer-column strong { color: var(--ink); }
+.public-shell:has(.home-updates) .footer-brand p,
+.public-shell:has(.home-updates) .footer-column a { color: var(--muted); }
+.public-shell:has(.home-updates) .footer-bottom { color: var(--quiet); }
+
+@media (max-width: 900px) {
+  .public-shell:has(.home-updates) .updates-fallback { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .public-shell:has(.home-updates) .updates-fallback-feature { grid-column: 1 / -1; }
+}
+@media (max-width: 680px) {
+  .public-shell:has(.home-updates) .home-updates { padding: 38px 18px 34px; }
+  .public-shell:has(.home-updates) .home-updates .section-header {
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+  .public-shell:has(.home-updates) .home-updates .section-header h2 { font-size: 35px; }
+  .public-shell:has(.home-updates) .home-updates .section-header > a { font-size: 13px; }
+  .public-shell:has(.home-updates) .updates-fallback { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .public-shell:has(.home-updates) .updates-fallback-feature {
+    grid-column: auto;
+    align-self: stretch;
+    padding: 0 0 8px;
+  }
+  .public-shell:has(.home-updates) .updates-fallback-feature h3 { font-size: 30px; margin: 12px 0; }
+  .public-shell:has(.home-updates) .updates-fallback-feature p { font-size: 15px; }
+  .public-shell:has(.home-updates) .updates-fallback-link {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    align-content: center;
+    gap: 7px 14px;
+    min-height: 126px;
+    padding: 20px 22px;
+  }
+  .public-shell:has(.home-updates) .updates-fallback-link > span { grid-column: 1; }
+  .public-shell:has(.home-updates) .updates-fallback-link strong {
+    grid-column: 1;
+    margin: 0;
+    font-size: 25px;
+  }
+  .public-shell:has(.home-updates) .updates-fallback-link svg {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    align-self: center;
+    margin: 0;
+  }
+  .public-shell:has(.home-updates) .home-sections { padding-bottom: 32px; }
+  .public-shell:has(.home-updates) .home-sections .section-header h2 { font-size: 34px; }
+  .public-shell:has(.home-updates) .flagship-section:has(.state-error) { margin-bottom: 36px; }
+  .public-shell:has(.home-updates) .home-sections .page-state { min-height: 112px; }
+  .public-shell:has(.home-updates) .app-footer-rich { padding-top: 36px; }
+}
+
+@media (max-width: 820px) {
+  .public-shell .page-title-band,
+  .workspace-shell .page-title-band { min-height: 144px; padding: 28px 25px; }
+  .public-detail-shell .page-title-band { min-height: 170px; }
+  .public-detail-shell .page-title-actions { display: none; }
+}
+@media (max-width: 600px) {
+  .public-shell .page-title-band,
+  .workspace-shell .page-title-band { min-height: 120px; padding: 24px 18px; }
+  .public-detail-shell .page-title-band { min-height: 145px; }
+  .public-shell .page-title-band h1,
+  .workspace-shell .page-title-band h1,
+  .public-detail-shell .page-title-band h1 { font-size: clamp(29px, 8vw, 38px); }
+  .public-shell:not(:has(.home-updates)) .page-intro { align-items: stretch; }
+  .public-shell :is(.competition-row, .article-archive > a, .work-archive-list > a, .problem-directory.standalone > a):is(:hover, :focus-visible) { padding-left: 4px; }
+  .public-shell .about-page { padding: 28px 0; }
+  .public-shell :is(.competition-main h2, .article-archive h2) { font-size: 23px; }
+  .public-shell :is(.work-archive-copy h2, .problem-heading h3, .track-directory h3) { font-size: 21px; }
+  .public-shell :is(.competition-main p, .article-archive p, .work-archive-copy p, .problem-directory p, .track-directory p) { font-size: 15px; }
+  .public-detail-shell .markdown-body :is(p, li, blockquote) { font-size: 16px; }
+  .public-shell:has(.home-updates) .news-showcase .updates-sidebar .update-small {
+    grid-template-columns: 84px minmax(0, 1fr);
+    min-height: 116px;
+  }
+  .public-shell:has(.home-updates) .news-showcase .update-small-visual { width: 84px; height: 100px; }
+  .public-shell:has(.home-updates) .news-showcase .update-small .update-card-top :is(time, span) { font-size: 11px; }
+  .public-shell:has(.home-updates) .news-showcase .update-small strong { font-size: 18px; }
+  .public-shell:has(.home-updates) .news-showcase .update-small p { font-size: 13px; -webkit-line-clamp: 2; }
+  .public-shell:has(.home-updates) .manifesto-card p,
+  .public-shell:has(.home-updates) .flagship-section .track-card p { font-size: 14px; line-height: 1.55; }
+  .public-shell:has(.home-updates) .manifesto-card strong { font-size: 23px; }
+  .public-shell:has(.home-updates) .flagship-section .track-card h3 { font-size: 21px; }
+  .public-shell:has(.home-updates) .flagship-section .track-card footer { font-size: 13px; }
+  .public-shell:has(.home-updates) .hero-description { font-size: 15px; }
+  .public-shell:has(.home-updates) .hero-statement { font-size: 16px; }
+  .public-shell:has(.home-updates) .scroll-film__intro-label { font-size: 11px; }
+  .app-shell .topbar-actions .primary-button { font-size: 0; }
+}

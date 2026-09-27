@@ -163,7 +163,12 @@ export default function Home() {
       </RevealSection>
 
       <div className="home-sections" id="discover">
-        {loading ? <PageLoading label="正在读取赛事" /> : error ? <PageError message={error} retry={load} /> : competition ? (
+        {loading ? <PageLoading label="正在读取赛事" /> : error ? (
+          <RevealSection className="home-section flagship-section">
+            <header className="section-header"><div><span className="eyebrow"><i />FLAGSHIP</span><h2>旗舰系列</h2></div></header>
+            <PageError message={error} retry={load} />
+          </RevealSection>
+        ) : competition ? (
           <RevealSection className="home-section flagship-section">
             <header className="section-header">
               <div><span className="eyebrow"><i />FLAGSHIP</span><h2>旗舰系列</h2><span className="mobile-swipe-hint" aria-hidden="true">左右滑动查看赛道 <ArrowRight size={14} /></span></div>
