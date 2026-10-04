@@ -8,11 +8,22 @@ from flask import Blueprint, current_app, jsonify, request
 from ..extensions import db
 from ..models import Competition, Problem, Registration, Submission, Team, TeamMember, Track
 from ..reviewing import validate_scoring_config
+from ..evaluation import validate_evaluation_config
+from ..submission_schema import validate_submission_schema
 from ..security import current_user, require_user, team_member
 from ..utils import audit, payload
 
 
 competitions_bp = Blueprint("competitions", __name__)
+
+
+def can_view_drafts() -> bool:
+    user = current_user()
+    return bool(user and user.role in {"admin", "organizer"})
+
+
+def visible_problems(items):
+    return [item for item in items if item["status"] != "draft"]
 
 
 def deadline_passed(value) -> bool:
@@ -30,6 +41,8 @@ def registration_deadline_response():
 def list_competitions():
     status = request.args.get("status")
     query = Competition.query
+    if not can_view_drafts():
+        query = query.filter(Competition.status == "published")
     if status:
         query = query.filter_by(status=status)
     return jsonify([item.to_dict() for item in query.order_by(Competition.created_at.desc()).all()])
@@ -38,7 +51,13 @@ def list_competitions():
 @competitions_bp.get("/competitions/<slug>")
 def competition_detail(slug: str):
     item = Competition.query.filter_by(slug=slug).first_or_404()
-    return jsonify(item.to_dict(include_tracks=True))
+    if item.status != "published" and not can_view_drafts():
+        return jsonify({"error": "competition not found"}), 404
+    data = item.to_dict(include_tracks=True)
+    if not can_view_drafts():
+        for track in data["tracks"]:
+            track["problems"] = visible_problems(track["problems"])
+    return jsonify(data)
 
 
 @competitions_bp.post("/competitions")
@@ -77,8 +96,13 @@ def create_track(slug: str):
 @competitions_bp.get("/competitions/<competition_slug>/tracks/<track_slug>")
 def track_detail(competition_slug: str, track_slug: str):
     competition = Competition.query.filter_by(slug=competition_slug).first_or_404()
+    if competition.status != "published" and not can_view_drafts():
+        return jsonify({"error": "track not found"}), 404
     track = Track.query.filter_by(competition_id=competition.id, slug=track_slug).first_or_404()
-    return jsonify({**track.to_dict(include_problems=True), "competition": competition.to_dict()})
+    data = track.to_dict(include_problems=True)
+    if not can_view_drafts():
+        data["problems"] = visible_problems(data["problems"])
+    return jsonify({**data, "competition": competition.to_dict()})
 
 
 @competitions_bp.post("/tracks/<track_id>/problems")
@@ -92,9 +116,11 @@ def create_problem(track_id: str):
         return error
     try:
         scoring_config = validate_scoring_config(data.get("scoring_config"))
+        evaluation_config = validate_evaluation_config(data.get("evaluation_config"))
+        data["submission_schema"] = validate_submission_schema(data.get("submission_schema"))
     except ValueError as validation_error:
         return jsonify({"error": str(validation_error)}), 400
-    item = Problem(track=track, code=data["code"], slug=data["slug"], title=data["title"], summary=data.get("summary", ""), status=data.get("status", "draft"), statement_md=data.get("statement_md", ""), submission_schema=data.get("submission_schema", {}), judging_schema=data.get("judging_schema", {}), scoring_config=scoring_config, difficulty=data.get("difficulty", 3), compute_note=data.get("compute_note", ""), source_url=data.get("source_url"))
+    item = Problem(track=track, code=data["code"], slug=data["slug"], title=data["title"], summary=data.get("summary", ""), status=data.get("status", "draft"), statement_md=data.get("statement_md", ""), submission_schema=data.get("submission_schema", {}), judging_schema=data.get("judging_schema", {}), scoring_config=scoring_config, evaluation_config=evaluation_config, difficulty=data.get("difficulty", 3), compute_note=data.get("compute_note", ""), source_url=data.get("source_url"))
     db.session.add(item)
     db.session.flush()
     audit("problem.created", "problem", item.id, {"track_id": track_id})
@@ -104,7 +130,9 @@ def create_problem(track_id: str):
 
 @competitions_bp.get("/problems")
 def list_problems():
-    query = Problem.query.join(Track)
+    query = Problem.query.join(Track).join(Competition)
+    if not can_view_drafts():
+        query = query.filter(Competition.status == "published", Problem.status != "draft")
     if request.args.get("track"):
         query = query.filter(Track.slug == request.args["track"])
     if request.args.get("status"):
@@ -116,6 +144,8 @@ def list_problems():
 @competitions_bp.get("/problems/<problem_id_or_slug>")
 def problem_detail(problem_id_or_slug: str):
     item = Problem.query.filter((Problem.id == problem_id_or_slug) | (Problem.slug == problem_id_or_slug)).first_or_404()
+    if not can_view_drafts() and (item.status == "draft" or item.track.competition.status != "published"):
+        return jsonify({"error": "problem not found"}), 404
     return jsonify({**item.to_dict(include_statement=True), "track": item.track.to_dict(), "competition": item.track.competition.to_dict()})
 
 
@@ -129,6 +159,8 @@ def create_team():
     competition = db.session.get(Competition, data["competition_id"])
     if not competition:
         return jsonify({"error": "competition not found"}), 404
+    if competition.status != "published":
+        return jsonify({"error": "competition is not open"}), 409
     if deadline_passed(competition.registration_closes_at):
         return registration_deadline_response()
     if Team.query.filter_by(competition_id=competition.id, name=data["name"]).first():
@@ -228,6 +260,8 @@ def register_team():
     team = db.session.get(Team, data["team_id"])
     if not competition or not team:
         return jsonify({"error": "competition or team not found"}), 404
+    if competition.status != "published":
+        return jsonify({"error": "competition is not open"}), 409
     if deadline_passed(competition.registration_closes_at):
         return registration_deadline_response()
     if team.competition_id != competition.id:

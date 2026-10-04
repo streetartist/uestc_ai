@@ -14,6 +14,7 @@ from .routes.content import content_bp
 from .routes.manage import manage_bp
 from .routes.markdown_assets import markdown_assets_bp
 from .routes.submissions import submissions_bp
+from .routes.evaluations import evaluations_bp
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -47,6 +48,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         ENFORCE_COMPETITION_DEADLINES=os.environ.get("ENFORCE_COMPETITION_DEADLINES", "1") == "1",
         AUTO_CREATE_SCHEMA=os.environ.get("AUTO_CREATE_SCHEMA", "0") == "1",
         SEED_DATABASE=os.environ.get("SEED_DATABASE", "0") == "1",
+        EVALUATION_WORKER_TOKEN=os.environ.get("EVALUATION_WORKER_TOKEN", ""),
+        EVALUATION_ENABLED_ADAPTERS=os.environ.get("EVALUATION_ENABLED_ADAPTERS", ""),
+        EVALUATION_API_URL=os.environ.get("EVALUATION_API_URL", ""),
+        EVALUATION_API_KEY=os.environ.get("EVALUATION_API_KEY", ""),
         INITIAL_ADMIN_EMAIL=os.environ.get("INITIAL_ADMIN_EMAIL", "admin@uestcai.top"),
         INITIAL_ADMIN_PASSWORD=os.environ.get("INITIAL_ADMIN_PASSWORD", ""),
         INITIAL_REVIEWER_EMAIL=os.environ.get("INITIAL_REVIEWER_EMAIL", "reviewer@uestc.ai"),
@@ -86,6 +91,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(competitions_bp, url_prefix="/api")
     app.register_blueprint(submissions_bp, url_prefix="/api")
+    app.register_blueprint(evaluations_bp, url_prefix="/api")
     app.register_blueprint(content_bp, url_prefix="/api")
     app.register_blueprint(manage_bp, url_prefix="/api")
     app.register_blueprint(markdown_assets_bp, url_prefix="/api")

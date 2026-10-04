@@ -1084,3 +1084,31 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }
+
+.evaluation-editor { border: 1px solid var(--line); border-radius: 4px; margin: 24px 0; padding: 18px; min-width: 0; }
+.evaluation-editor legend { padding: 0 8px; font-size: 16px; font-weight: 700; }
+.evaluation-editor .form-field { margin-bottom: 15px; }
+.evaluation-resource-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; }
+.evaluation-toggle { display: flex; align-items: center; gap: 9px; margin-bottom: 13px; font-size: 14px; }
+.evaluation-toggle input, .evaluation-metric-picker input { width: 16px; height: 16px; flex: 0 0 16px; }
+.evaluation-metric-picker { margin: 18px 0 12px; }
+.evaluation-metric-picker > strong { display: block; margin-bottom: 9px; }
+.evaluation-metric-picker > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.evaluation-metric-picker label { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; }
+.evaluation-metric-picker small { color: var(--muted); }
+.evaluation-note { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.evaluation-results { margin: 22px 0; padding: 18px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.evaluation-results header { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 13px; }
+.evaluation-results header span, .evaluation-results small { color: var(--muted); font-size: 12px; }
+.evaluation-results dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 0 0 16px; }
+.evaluation-results dl > div { display: flex; flex-direction: column; gap: 4px; }
+.evaluation-results dt { font-size: 12px; color: var(--muted); }
+.evaluation-results dd { margin: 0; font-size: 20px; font-weight: 700; }
+.evaluation-results p { margin: 0 0 12px; }
+.evaluation-results h4 { margin: 0 0 10px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.evaluation-episodes { display: grid; gap: 12px; margin: 4px 0 16px; }
+.evaluation-episodes article { padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.evaluation-episodes article > header { margin-bottom: 12px; }
+.evaluation-episodes article > header span { padding: 3px 8px; border-radius: 999px; background: var(--soft); }
+.evaluation-episodes article dl { margin-bottom: 0; }
+@media (max-width: 600px) { .evaluation-resource-grid, .evaluation-metric-picker > div { grid-template-columns: 1fr; } }

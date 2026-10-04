@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import io
+import json
+import os
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -13,7 +17,8 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from platform_api import create_app  # noqa: E402
 from platform_api.extensions import db  # noqa: E402
-from platform_api.models import Competition  # noqa: E402
+from platform_api.models import AuditLog, Competition, Content, User  # noqa: E402
+from platform_api.seed import replace_demo_data  # noqa: E402
 
 
 class PlatformApiTestCase(unittest.TestCase):
@@ -66,14 +71,50 @@ class PlatformApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.get_json())
         return response
 
+    def test_problem_templates_and_formal_material_validation(self):
+        self.assertEqual(self.member.get("/api/manage/problem-templates").status_code, 401)
+        self.login(self.admin, "admin@uestcai.top")
+        response = self.admin.get("/api/manage/problem-templates")
+        self.assertEqual(response.status_code, 200)
+        template = next(item["problem"] for item in response.get_json() if item["id"] == "research-challenge")
+        competition = self.member.get("/api/competitions/paper-city-2027").get_json()
+        track = competition["tracks"][0]
+        created = self.admin.post(f"/api/tracks/{track['id']}/problems", json={**template, "status": "published"})
+        self.assertEqual(created.status_code, 201, created.get_json())
+        problem_id = created.get_json()["id"]
+        invalid = self.admin.patch(f"/api/manage/problems/{problem_id}", json={"submission_schema": {"fields": ["a", "a"]}})
+        self.assertEqual(invalid.status_code, 400)
+        self.register(self.member, "materials@std.uestc.edu.cn", "材料测试")
+        team = self.member.post("/api/teams", json={"competition_id": competition["id"], "name": "材料测试队"}).get_json()
+        registered = self.member.post("/api/registrations", json={"competition_id": competition["id"], "track_id": track["id"], "team_id": team["id"]})
+        self.assertEqual(registered.status_code, 201)
+        data = {"problem_id": problem_id, "team_id": team["id"], "title": "Draft", "readme_md": "", "fields": {}, "status": "draft"}
+        draft = self.member.post("/api/submissions", json=data)
+        self.assertEqual(draft.status_code, 201, draft.get_json())
+        rejected = self.member.post("/api/submissions", json={**data, "status": "submitted"})
+        self.assertEqual(rejected.status_code, 400)
+        staged = []
+        for name, contents in (("code.zip", b"code"), ("report.pdf", b"%PDF-1.4 report")):
+            asset = self.member.post("/api/submission-assets/stage", data={"file": (io.BytesIO(contents), name)}, content_type="multipart/form-data")
+            self.assertEqual(asset.status_code, 201, asset.get_json())
+            staged.append(asset.get_json()["id"])
+        formal = self.member.post("/api/submissions", json={**data, "status": "submitted", "title": "Formal", "readme_md": "# System", "fields": {"runtime_notes": "python agent.py"}, "staged_asset_ids": staged})
+        self.assertEqual(formal.status_code, 201, formal.get_json())
+        retained = [item["id"] for item in formal.get_json()["version"]["assets"]]
+        rejected = self.member.post("/api/submissions", json={**data, "status": "submitted", "title": "Should not replace", "readme_md": "# System", "fields": {"runtime_notes": "python agent.py"}, "retained_asset_ids": retained[:1]})
+        self.assertEqual(rejected.status_code, 400)
+        unchanged = self.member.get(f"/api/submissions/{formal.get_json()['id']}").get_json()
+        self.assertEqual(unchanged["title"], "Formal")
+        self.assertEqual(len(unchanged["versions"][-1]["assets"]), 2)
+
     def test_catalog_is_database_driven(self):
-        response = self.member.get("/api/competitions/2026-spring")
+        response = self.member.get("/api/competitions/paper-city-2027")
         self.assertEqual(response.status_code, 200)
         competition = response.get_json()
         self.assertEqual(len(competition["tracks"]), 4)
         self.assertEqual(
             {track["slug"] for track in competition["tracks"]},
-            {"dl", "game-agent", "embodied-coding-ai", "ai-product-design"},
+            {"paper-machines", "sound-walks", "night-signs", "story-maps"},
         )
         self.assertGreaterEqual(sum(len(track["problems"]) for track in competition["tracks"]), 10)
 
@@ -88,6 +129,31 @@ class PlatformApiTestCase(unittest.TestCase):
                 "INITIAL_ADMIN_PASSWORD": "",
                 "INITIAL_REVIEWER_PASSWORD": "",
             })
+
+    def test_demo_replacement_preserves_accounts_and_rejects_activity(self):
+        with self.app.app_context():
+            admin = User.query.filter_by(email="admin@uestcai.top").one()
+            original_id, original_hash = admin.id, admin.password_hash
+            content_slugs = {item.slug for item in Content.query.all()}
+            db.session.add(AuditLog(action="content.updated", entity_type="content", entity_id="sample"))
+            db.session.commit()
+            with self.assertRaisesRegex(RuntimeError, "activity records"):
+                from platform_api.models import Team
+
+                db.session.add(Team(competition_id=Competition.query.one().id, name="sample", invite_code="SAMPLE01", captain_id=admin.id))
+                db.session.commit()
+                replace_demo_data("paper-city-2027", content_slugs)
+            self.assertEqual(Competition.query.count(), 1)
+            Team.query.delete()
+            db.session.commit()
+            with self.assertRaisesRegex(RuntimeError, "catalog history"):
+                replace_demo_data("paper-city-2027", content_slugs)
+            replace_demo_data("paper-city-2027", content_slugs, purge_catalog_history=True)
+            admin = User.query.filter_by(email="admin@uestcai.top").one()
+            self.assertEqual((admin.id, admin.password_hash), (original_id, original_hash))
+            self.assertEqual(Competition.query.count(), 1)
+            self.assertEqual(Content.query.count(), 3)
+            self.assertEqual(AuditLog.query.count(), 0)
 
     def test_email_verification_and_external_registration_invites(self):
         campus_client = self.app.test_client()
@@ -146,16 +212,273 @@ class PlatformApiTestCase(unittest.TestCase):
         self.assertEqual(invite_history.get_json()[0]["used_by_email"], external_email)
         self.assertNotIn("code", invite_history.get_json()[0])
 
+    def test_configured_evaluation_is_observable_without_creating_scores(self):
+        self.app.config["EVALUATION_WORKER_TOKEN"] = "test-worker-secret"
+        self.app.config["EVALUATION_ENABLED_ADAPTERS"] = "minecraft-agent-v1"
+        self.register(self.member, "observer@std.uestc.edu.cn", "Observer")
+        self.login(self.admin, "admin@uestcai.top")
+        competition = self.member.get("/api/competitions/paper-city-2027").get_json()
+        track = next(item for item in competition["tracks"] if item["slug"] == "story-maps")
+        problem = track["problems"][0]
+        config = {
+            "adapter": "minecraft-agent-v1", "task": "survival",
+            "resources": {"cpus": 2, "memory_mb": 2048, "gpu": True, "time_seconds": 300, "episodes": 2},
+            "api": {"enabled": True, "max_calls": 1},
+            "metrics": ["task_success", "deaths"],
+        }
+        invalid = self.admin.patch(f"/api/manage/problems/{problem['id']}", json={"evaluation_config": {**config, "metrics": ["imaginary"]}})
+        self.assertEqual(invalid.status_code, 400)
+        configured = self.admin.patch(f"/api/manage/problems/{problem['id']}", json={"evaluation_config": config})
+        self.assertEqual(configured.status_code, 200, configured.get_json())
+        self.assertEqual(configured.get_json()["scoring_config"]["external_weight_percent"], 0)
+
+        team = self.member.post("/api/teams", json={"competition_id": competition["id"], "name": "Observers"}).get_json()
+        self.member.post("/api/registrations", json={"competition_id": competition["id"], "track_id": track["id"], "team_id": team["id"]})
+        staged = self.member.post("/api/submission-assets/stage", data={
+            "problem_id": problem["id"], "file": (io.BytesIO(b"test zip bytes"), "agent.zip"),
+        }, content_type="multipart/form-data")
+        self.assertEqual(staged.status_code, 201, staged.get_json())
+        fields = {"problem_id": problem["id"], "team_id": team["id"], "title": "Observer work", "readme_md": "# Demo", "status": "submitted"}
+        missing = self.member.post("/api/submissions", json=fields)
+        self.assertEqual(missing.status_code, 400, missing.get_json())
+        submitted = self.member.post("/api/submissions", json={**fields, "staged_asset_ids": [staged.get_json()["id"]]})
+        self.assertEqual(submitted.status_code, 201, submitted.get_json())
+        version_id = submitted.get_json()["version"]["id"]
+        public = self.member.get(f"/api/works/{submitted.get_json()['id']}").get_json()
+        self.assertEqual(public["evaluation"]["status"], "queued")
+        self.login(self.reviewer, "reviewer@uestc.ai")
+        review_payload = {"submission_version_id": version_id, "scores": {"system": 80}, "total_score": 80}
+        pending_review = self.reviewer.post("/api/reviews", json=review_payload)
+        self.assertEqual(pending_review.status_code, 409, pending_review.get_json())
+        self.assertEqual(pending_review.get_json()["error"], "evaluation must complete before review")
+        self.assertEqual(self.admin.patch(f"/api/manage/problems/{problem['id']}", json={"evaluation_config": {}}).status_code, 409)
+
+        denied = self.app.test_client().post("/api/evaluation-worker/claim")
+        self.assertEqual(denied.status_code, 401)
+        worker = self.app.test_client()
+        worker_headers = {"Authorization": "Bearer test-worker-secret"}
+        wrong_adapter = worker.post("/api/evaluation-worker/claim", headers=worker_headers, json={"adapters": ["classification-v1"], "gpu": True})
+        self.assertEqual(wrong_adapter.status_code, 204)
+        no_gpu = worker.post("/api/evaluation-worker/claim", headers=worker_headers, json={"adapters": ["minecraft-agent-v1"], "gpu": False})
+        self.assertEqual(no_gpu.status_code, 204)
+        claimed = worker.post("/api/evaluation-worker/claim", headers=worker_headers, json={"adapters": ["minecraft-agent-v1"], "gpu": True})
+        self.assertEqual(claimed.status_code, 200, claimed.get_json())
+        task = claimed.get_json()
+        lease = {"X-Evaluation-Lease": task["lease_token"]}
+        self.assertNotEqual(task["api_token"], task["lease_token"])
+        asset_response = worker.get(task["asset_url"], headers=lease, buffered=True)
+        self.assertEqual(asset_response.status_code, 200)
+        asset_response.close()
+        self.app.config.update(EVALUATION_API_URL="https://example.invalid/v1/chat/completions", EVALUATION_API_KEY="secret")
+        self.assertEqual(worker.post(f"/api/evaluation-worker/runs/{task['id']}/complete", headers={"X-Evaluation-Lease": task["api_token"]}, json={"status": "failed"}).status_code, 403)
+        api_headers = {"X-Evaluation-API-Token": task["api_token"]}
+        with patch("platform_api.routes.evaluations.urllib.request.build_opener") as opener:
+            opener.return_value.open.return_value = io.BytesIO(b'{"ok": true}')
+            proxied = worker.post(f"/api/evaluation-worker/runs/{task['id']}/api", headers=api_headers, json={"messages": []})
+            self.assertEqual(proxied.status_code, 200, proxied.get_data(as_text=True))
+            self.assertEqual(opener.return_value.open.call_args.args[0].get_header("Authorization"), "Bearer secret")
+        capped = worker.post(f"/api/evaluation-worker/runs/{task['id']}/api", headers=api_headers, json={"messages": []})
+        self.assertEqual(capped.status_code, 429)
+        invalid_result = worker.post(f"/api/evaluation-worker/runs/{task['id']}/complete", headers=lease, json={
+            "status": "completed", "episodes": [{"task_success": float("nan"), "deaths": 0}, {"task_success": 100, "deaths": 0}],
+        })
+        self.assertEqual(invalid_result.status_code, 400)
+        completed = worker.post(f"/api/evaluation-worker/runs/{task['id']}/complete", headers=lease, json={
+            "status": "completed", "episodes": [
+                {
+                    "scenario": {"id": "easy", "label": "入门：从零开始", "difficulty": "beginner"},
+                    "metrics": {"task_success": 100, "deaths": 0},
+                },
+                {
+                    "scenario": {"id": "hard", "label": "挑战：铁器时代", "difficulty": "challenge"},
+                    "metrics": {"task_success": 0, "deaths": 2},
+                },
+            ],
+        })
+        self.assertEqual(completed.status_code, 200, completed.get_json())
+        self.assertEqual(completed.get_json()["metrics"], {"task_success": 50, "deaths": 1})
+        self.assertEqual(completed.get_json()["episodes"][0]["scenario"]["label"], "入门：从零开始")
+        self.assertEqual(completed.get_json()["episodes"][0]["metrics"], {"task_success": 100, "deaths": 0})
+        self.assertEqual(completed.get_json()["api_calls_used"], 1)
+        self.assertNotIn("total_score", completed.get_json())
+        queue = self.reviewer.get("/api/review-queue").get_json()
+        self.assertEqual(next(item for item in queue if item["id"] == version_id)["evaluation"]["metrics"], {"task_success": 50, "deaths": 1})
+        self.assertEqual(self.reviewer.post("/api/reviews", json=review_payload).status_code, 201)
+        public_result = self.app.test_client().get(f"/api/works/{submitted.get_json()['id']}")
+        self.assertEqual(public_result.status_code, 200)
+        self.assertEqual(public_result.get_json()["evaluation"]["metrics"], {"task_success": 50, "deaths": 1})
+        with self.app.app_context():
+            from platform_api.models import Score, ScoreBatch
+            self.assertEqual(Score.query.count(), 0)
+            self.assertEqual(ScoreBatch.query.count(), 0)
+        appended = self.member.post(f"/api/submission-versions/{version_id}/assets", data={
+            "file": (io.BytesIO(b"different package"), "replacement.zip"),
+        }, content_type="multipart/form-data")
+        self.assertEqual(appended.status_code, 409)
+        latest = self.member.post("/api/submissions", json={**fields, "title": "Updated", "retained_asset_ids": [public["assets"][0]["id"]]})
+        self.assertEqual(latest.status_code, 201, latest.get_json())
+        history = self.member.get(f"/api/submission-versions/{version_id}/evaluation-runs").get_json()
+        self.assertEqual([run["status"] for run in history], ["queued", "superseded"])
+
+    def test_trusted_adapter_manifest_adds_configurable_metrics(self):
+        manifest_dir = Path(self.runtime.name) / "adapters"
+        manifest_dir.mkdir()
+        (manifest_dir / "example.json").write_text(json.dumps({
+            "id": "motion-lab-v1", "name": "Motion lab", "submission": {"extension": "zip", "label": "Program archive"},
+            "tasks": ["motion"], "metrics": [{"key": "throughput", "label": "Frames per second", "unit": "fps", "direction": "max", "min": 0, "max": 1000}],
+        }), encoding="utf-8")
+        self.login(self.admin, "admin@uestcai.top")
+        with patch.dict(os.environ, {"EVALUATION_ADAPTER_MANIFEST_DIR": str(manifest_dir)}):
+            catalog = self.admin.get("/api/evaluation-adapters")
+            self.assertEqual(catalog.status_code, 200)
+            custom = next(item for item in catalog.get_json() if item["id"] == "motion-lab-v1")
+            self.assertEqual(custom["metrics"][0]["label"], "Frames per second")
+            self.assertFalse(custom["available"])
+            from platform_api.evaluation import validate_evaluation_config
+            configured = validate_evaluation_config({
+                "adapter": custom["id"], "task": "motion",
+                "resources": {"cpus": 1, "memory_mb": 1024, "gpu": False, "time_seconds": 120, "episodes": 1},
+                "api": {"enabled": False, "max_calls": 0}, "metrics": ["throughput"],
+            })
+            self.assertEqual(configured["metrics"], ["throughput"])
+
+    def test_private_challenge_drafts_do_not_leak_through_public_catalog(self):
+        self.login(self.admin, "admin@uestcai.top")
+        competition = self.admin.post("/api/competitions", json={
+            "slug": "private-challenge", "name": "Private challenge", "summary": "Unpublished", "status": "draft",
+        }).get_json()
+        track = self.admin.post("/api/competitions/private-challenge/tracks", json={
+            "slug": "private-track", "name": "Private track",
+        }).get_json()
+        problem = self.admin.post(f"/api/tracks/{track['id']}/problems", json={
+            "code": "PRI-001", "slug": "private-problem", "title": "Private problem", "status": "draft",
+        }).get_json()
+        self.assertEqual(self.admin.get("/api/competitions/private-challenge").status_code, 200)
+
+        public = self.app.test_client()
+        self.assertEqual(public.get("/api/competitions?status=draft").get_json(), [])
+        self.assertEqual(public.get("/api/competitions/private-challenge").status_code, 404)
+        self.assertEqual(public.get("/api/competitions/private-challenge/tracks/private-track").status_code, 404)
+        self.assertEqual(public.get("/api/problems?status=draft").get_json(), [])
+        self.assertEqual(public.get(f"/api/problems/{problem['id']}").status_code, 404)
+        self.register(self.member, "private-reader@std.uestc.edu.cn", "Reader")
+        self.assertEqual(self.member.get(f"/api/problems/{problem['id']}").status_code, 404)
+        self.assertEqual(self.member.post("/api/teams", json={
+            "competition_id": competition["id"], "name": "No early access",
+        }).status_code, 409)
+
+        published = self.admin.get("/api/competitions/paper-city-2027").get_json()
+        visible_track = published["tracks"][0]
+        hidden = self.admin.post(f"/api/tracks/{visible_track['id']}/problems", json={
+            "code": "HIDE-001", "slug": "hidden-in-public-track", "title": "Hidden", "status": "draft",
+        }).get_json()
+        self.assertEqual(public.get(f"/api/problems/{hidden['id']}").status_code, 404)
+        visible_competition = public.get("/api/competitions/paper-city-2027").get_json()
+        self.assertNotIn(hidden["id"], [item["id"] for row in visible_competition["tracks"] for item in row["problems"]])
+
+    def test_imported_drafts_are_private_and_existing_drafts_are_preserved(self):
+        from import_challenge_draft import import_draft
+
+        document = {"competition": {"slug": "new-draft", "name": "Draft", "summary": "Unpublished"}, "tracks": [{
+            "slug": "agent-track", "name": "Agent", "description": "Tests the adapter", "problems": [{
+                "code": "AG-001", "slug": "agent", "title": "Agent", "summary": "Scenario",
+                "statement_lines": ["# Agent", "Test scenario"],
+                "submission_schema": {"fields": ["repository"], "readme_required": True},
+                "judging_schema": {"rubric": {"design": 1}},
+                "evaluation_config": {
+                    "adapter": "minecraft-agent-v1", "task": "open-world",
+                    "resources": {"cpus": 4, "memory_mb": 8192, "gpu": False, "time_seconds": 600, "episodes": 3},
+                    "api": {"enabled": True, "max_calls": 30},
+                    "metrics": ["task_success", "exploration_progress"],
+                },
+            }],
+        }]}
+        with self.app.app_context():
+            competition = import_draft(document)
+            self.assertEqual(competition.status, "draft")
+            self.assertEqual(competition.tracks[0].problems[0].evaluation_config["task"], "open-world")
+            with self.assertRaisesRegex(ValueError, "already exists"):
+                import_draft(document)
+        self.assertEqual(self.app.test_client().get("/api/competitions/new-draft").status_code, 404)
+
+    def test_minecraft_metrics_are_calculated_from_trusted_episode_events(self):
+        from evaluation_adapters.minecraft_metrics import summarize_episode
+
+        scene = {
+            "required_objectives": ["wood", "stone"], "completed_objectives": ["wood"],
+            "collected_items": ["log", "log", "plank"], "positions": [[0, 0, 0], [3, 0, 4]],
+            "tech_milestones": ["wooden_tool", "wooden_tool"], "deaths": 0,
+            "invalid_actions": 1, "step_latencies_ms": [25, 75], "api_calls": 2,
+        }
+        result = summarize_episode(scene)
+        self.assertEqual(result["task_success"], 0)
+        self.assertEqual(result["exploration_progress"], 50)
+        self.assertEqual(result["distance_blocks"], 5)
+        self.assertEqual(result["unique_items"], 2)
+        self.assertEqual(result["mean_step_ms"], 50)
+        self.assertEqual(summarize_episode({**scene, "completed_objectives": ["wood", "stone"]})["task_success"], 100)
+        with self.assertRaisesRegex(ValueError, "finite"):
+            summarize_episode({**scene, "positions": [[float("nan"), 0, 0]]})
+
+    def test_worker_only_runs_pinned_adapter_with_isolated_network(self):
+        import evaluation_worker
+
+        job = {
+            "id": "sample-run", "lease_token": "worker-only-lease", "api_token": "api-only-token", "asset_url": "/sample.zip",
+            "config": {
+                "adapter": "minecraft-agent-v1", "task": "survival",
+                "resources": {"cpus": 2, "memory_mb": 2048, "gpu": False, "time_seconds": 60, "episodes": 1},
+                "api": {"enabled": False, "max_calls": 0}, "metrics": ["task_success"],
+            },
+        }
+        images = {"minecraft-agent-v1": "registry.invalid/adapter@sha256:" + "a" * 64}
+
+        def fake_run(command, **_kwargs):
+            if command[:3] == ["docker", "rm", "-f"]:
+                self.assertTrue(command[3].startswith("evaluation-"))
+                return SimpleNamespace(returncode=0)
+            output_mount = next(command[index + 1] for index, value in enumerate(command[:-1]) if value == "--mount" and "dst=/output" in command[index + 1])
+            output_dir = Path(output_mount.split("src=", 1)[1].split(",dst=", 1)[0])
+            (output_dir / "result.json").write_text('{"episodes": [{"task_success": 100}]}', encoding="utf-8")
+            self.assertIn("--network=none", command)
+            self.assertNotIn("worker-only-lease", command)
+            return SimpleNamespace(returncode=0)
+
+        with patch.object(evaluation_worker, "download") as download, patch.object(evaluation_worker.subprocess, "run", side_effect=fake_run), patch.object(evaluation_worker, "heartbeat"):
+            result = evaluation_worker.execute("http://localhost:5000/api", job, images, "", "", "")
+            self.assertEqual(result, {"status": "completed", "episodes": [{"task_success": 100}]})
+            download.assert_called_once()
+            with self.assertRaisesRegex(RuntimeError, "pinned digest"):
+                evaluation_worker.execute("http://localhost:5000/api", job, {"minecraft-agent-v1": "latest"}, "", "", "")
+
+        cleanup = []
+        def timed_out(command, **_kwargs):
+            if command[:3] == ["docker", "rm", "-f"]:
+                cleanup.append(command)
+                return SimpleNamespace(returncode=0)
+            raise evaluation_worker.subprocess.TimeoutExpired(command, 90)
+
+        with patch.object(evaluation_worker, "download"), patch.object(evaluation_worker.subprocess, "run", side_effect=timed_out), patch.object(evaluation_worker, "heartbeat"):
+            with self.assertRaises(evaluation_worker.subprocess.TimeoutExpired):
+                evaluation_worker.execute("http://localhost:5000/api", job, images, "", "", "")
+        self.assertEqual(len(cleanup), 1)
+
+        stopped = evaluation_worker.threading.Event()
+        with patch.object(stopped, "wait", return_value=False), patch.object(evaluation_worker, "request_json", side_effect=RuntimeError("lease lost")), patch.object(evaluation_worker.subprocess, "run") as remove:
+            evaluation_worker.heartbeat("http://localhost:5000/api", "sample-run", "lease", stopped, "evaluation-example")
+        self.assertTrue(stopped.is_set())
+        self.assertEqual(remove.call_args.args[0], ["docker", "rm", "-f", "evaluation-example"])
+
     def test_submission_review_score_and_leaderboard_workflow(self):
         self.register(self.member, "member@std.uestc.edu.cn", "参赛同学")
 
-        competition = self.member.get("/api/competitions/2026-spring").get_json()
-        track = next(item for item in competition["tracks"] if item["slug"] == "ai-product-design")
+        competition = self.member.get("/api/competitions/paper-city-2027").get_json()
+        track = next(item for item in competition["tracks"] if item["slug"] == "story-maps")
         problem = track["problems"][0]
 
         team_response = self.member.post("/api/teams", json={
             "competition_id": competition["id"],
-            "name": "可复现小队",
+            "name": "纸城邮差队",
         })
         self.assertEqual(team_response.status_code, 201, team_response.get_json())
         team = team_response.get_json()
@@ -169,13 +492,13 @@ class PlatformApiTestCase(unittest.TestCase):
         self.assertEqual(registration.status_code, 201, registration.get_json())
         my_registrations = self.member.get("/api/me/registrations")
         self.assertEqual(my_registrations.status_code, 200)
-        self.assertEqual(my_registrations.get_json()[0]["track_name"], "AI 产品设计")
+        self.assertEqual(my_registrations.get_json()[0]["track_name"], "故事地图")
 
         submit = self.member.post("/api/submissions", json={
             "problem_id": problem["id"],
             "team_id": team["id"],
-            "title": "校园模型评测台",
-            "readme_md": "# 校园模型评测台\n\n这是可以复现的作品说明。",
+            "title": "纸城路线册",
+            "readme_md": "# 纸城路线册\n\n这是一份虚构作品说明。",
             "fields": {"repository": "https://example.com/repository"},
             "status": "submitted",
         })
@@ -203,13 +526,13 @@ class PlatformApiTestCase(unittest.TestCase):
 
         public_work = self.member.get(f"/api/works/{submission['id']}")
         self.assertEqual(public_work.status_code, 200, public_work.get_json())
-        self.assertEqual(public_work.get_json()["version"]["readme_md"].splitlines()[0], "# 校园模型评测台")
+        self.assertEqual(public_work.get_json()["version"]["readme_md"].splitlines()[0], "# 纸城路线册")
         self.assertEqual(len(public_work.get_json()["assets"]), 1)
 
         second_version = self.member.post("/api/submissions", json={
             "problem_id": problem["id"],
             "team_id": team["id"],
-            "title": "校园模型评测台 2.0",
+            "title": "纸城路线册 2.0",
             "readme_md": "# 第二版",
             "fields": {"repository": "https://example.com/repository/v2"},
             "status": "submitted",
@@ -223,7 +546,7 @@ class PlatformApiTestCase(unittest.TestCase):
         public_archive = self.member.get("/api/works")
         self.assertEqual(public_archive.status_code, 200, public_archive.get_json())
         archived_work = next(item for item in public_archive.get_json() if item["id"] == submission["id"])
-        self.assertEqual(archived_work["title"], "校园模型评测台 2.0")
+        self.assertEqual(archived_work["title"], "纸城路线册 2.0")
         public_detail = self.member.get(f"/api/works/{submission['id']}").get_json()
         self.assertEqual(public_detail["competition"]["id"], competition["id"])
         self.assertEqual(public_detail["track"]["id"], track["id"])
@@ -240,7 +563,7 @@ class PlatformApiTestCase(unittest.TestCase):
         self.assertEqual(review_queue.get_json()[0]["readme_md"], "# 第二版")
         review = self.reviewer.post("/api/reviews", json={
             "submission_version_id": version_id,
-            "scores": {"engineering": 28, "completeness": 23, "idea": 18},
+            "scores": {"story": 40, "coherence": 29},
             "feedback_md": "结构清楚，可继续补充用户研究。",
             "status": "submitted",
         })
@@ -277,17 +600,21 @@ class PlatformApiTestCase(unittest.TestCase):
         self.assertEqual(score_import.status_code, 409, score_import.get_json())
         self.assertEqual(score_import.get_json()["error"], "external scoring is not enabled for this problem")
 
-        leaderboard = self.member.get("/api/leaderboards/2026-spring?track=ai-product-design")
+        with self.app.app_context():
+            stored_competition = db.session.get(Competition, competition["id"])
+            stored_competition.ends_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+            db.session.commit()
+        leaderboard = self.member.get("/api/leaderboards/paper-city-2027?track=story-maps")
         self.assertEqual(leaderboard.status_code, 200)
         rows = leaderboard.get_json()
-        self.assertEqual(rows[0]["team"], "可复现小队")
+        self.assertEqual(rows[0]["team"], "纸城邮差队")
         self.assertEqual(rows[0]["version"], 1)
         self.assertEqual(rows[0]["total_score"], 69.0)
 
     def test_competition_reviewer_weights_auto_split_and_review_progress(self):
         self.register(self.member, "weighted-member@std.uestc.edu.cn", "权重测试成员")
-        competition = self.member.get("/api/competitions/2026-spring").get_json()
-        track = next(item for item in competition["tracks"] if item["slug"] == "ai-product-design")
+        competition = self.member.get("/api/competitions/paper-city-2027").get_json()
+        track = next(item for item in competition["tracks"] if item["slug"] == "story-maps")
         problem = track["problems"][0]
         team = self.member.post("/api/teams", json={
             "competition_id": competition["id"],
@@ -334,7 +661,7 @@ class PlatformApiTestCase(unittest.TestCase):
         self.assertEqual(reviewer_queue.get_json()[0]["reviewer_weight_percent"], 40.0)
         review = self.reviewer.post("/api/reviews", json={
             "submission_version_id": version_id,
-            "scores": {"engineering": 80},
+            "scores": {"story": 80},
             "total_score": 80,
             "status": "submitted",
         })
@@ -351,7 +678,7 @@ class PlatformApiTestCase(unittest.TestCase):
         self.assertEqual(admin_queue.get_json()[0]["reviewer_weight_percent"], 60.0)
         admin_review = self.admin.post("/api/reviews", json={
             "submission_version_id": version_id,
-            "scores": {"engineering": 100},
+            "scores": {"story": 100},
             "total_score": 100,
             "status": "submitted",
         })
@@ -361,7 +688,11 @@ class PlatformApiTestCase(unittest.TestCase):
         self.assertEqual(final["reviewed_count"], 2)
         self.assertEqual(final["completed_weight_percent"], 100.0)
         self.assertEqual(final["final_score"], 92.0)
-        online_leaderboard = self.member.get("/api/leaderboards/2026-spring?track=ai-product-design")
+        with self.app.app_context():
+            stored_competition = db.session.get(Competition, competition["id"])
+            stored_competition.ends_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+            db.session.commit()
+        online_leaderboard = self.member.get("/api/leaderboards/paper-city-2027?track=story-maps")
         self.assertEqual(online_leaderboard.status_code, 200, online_leaderboard.get_json())
         online_rows = online_leaderboard.get_json()
         self.assertEqual(len(online_rows), 1)
@@ -378,7 +709,7 @@ class PlatformApiTestCase(unittest.TestCase):
         self.assertTrue(locked_queue.get_json()[0]["review_locked"])
         rejected_review = self.reviewer.post("/api/reviews", json={
             "submission_version_id": version_id,
-            "scores": {"engineering": 70},
+            "scores": {"story": 70},
             "total_score": 70,
             "status": "submitted",
         })
@@ -394,7 +725,7 @@ class PlatformApiTestCase(unittest.TestCase):
         self.assertFalse(unlocked.get_json()["locked"])
         updated_review = self.reviewer.post("/api/reviews", json={
             "submission_version_id": version_id,
-            "scores": {"engineering": 70},
+            "scores": {"story": 70},
             "total_score": 70,
             "status": "submitted",
         })
@@ -402,20 +733,20 @@ class PlatformApiTestCase(unittest.TestCase):
 
     def test_team_must_register_for_problem_track(self):
         self.register(self.member, "member2@std.uestc.edu.cn", "另一位同学")
-        competition = self.member.get("/api/competitions/2026-spring").get_json()
-        dl_track = next(item for item in competition["tracks"] if item["slug"] == "dl")
-        product_track = next(item for item in competition["tracks"] if item["slug"] == "ai-product-design")
+        competition = self.member.get("/api/competitions/paper-city-2027").get_json()
+        paper_track = next(item for item in competition["tracks"] if item["slug"] == "paper-machines")
+        story_track = next(item for item in competition["tracks"] if item["slug"] == "story-maps")
         team = self.member.post("/api/teams", json={
             "competition_id": competition["id"],
             "name": "单赛道队伍",
         }).get_json()
         self.member.post("/api/registrations", json={
             "competition_id": competition["id"],
-            "track_id": dl_track["id"],
+            "track_id": paper_track["id"],
             "team_id": team["id"],
         })
         response = self.member.post("/api/submissions", json={
-            "problem_id": product_track["problems"][0]["id"],
+            "problem_id": story_track["problems"][0]["id"],
             "team_id": team["id"],
             "title": "错误赛道提交",
             "readme_md": "# README",
@@ -469,8 +800,8 @@ class PlatformApiTestCase(unittest.TestCase):
 
     def test_submission_assets_stage_immediately_and_carry_into_new_drafts(self):
         self.register(self.member, "staged-assets@std.uestc.edu.cn", "附件流程测试成员")
-        competition = self.member.get("/api/competitions/2026-spring").get_json()
-        track = next(item for item in competition["tracks"] if item["slug"] == "ai-product-design")
+        competition = self.member.get("/api/competitions/paper-city-2027").get_json()
+        track = next(item for item in competition["tracks"] if item["slug"] == "story-maps")
         problem = track["problems"][0]
         team = self.member.post("/api/teams", json={
             "competition_id": competition["id"],
@@ -532,7 +863,7 @@ class PlatformApiTestCase(unittest.TestCase):
         self.login(self.reviewer, "reviewer@uestc.ai")
         review = self.reviewer.post("/api/reviews", json={
             "submission_version_id": formal.get_json()["version"]["id"],
-            "scores": {"engineering": 80},
+            "scores": {"story": 80},
             "status": "submitted",
         })
         self.assertEqual(review.status_code, 201, review.get_json())
@@ -618,9 +949,9 @@ class PlatformApiTestCase(unittest.TestCase):
         self.assertEqual(self.admin.delete(f"/api/content/{content['id']}").status_code, 204)
         self.assertEqual(self.admin.get("/api/content/delete-content-test").status_code, 404)
 
-        protected_competition = self.admin.get("/api/competitions/2026-spring").get_json()
-        protected_track = protected_competition["tracks"][0]
-        protected_problem = protected_track["problems"][0]
+        protected_competition = self.admin.get("/api/competitions/paper-city-2027").get_json()
+        protected_track = next(track for track in protected_competition["tracks"] if any(problem["status"] == "published" for problem in track["problems"]))
+        protected_problem = next(problem for problem in protected_track["problems"] if problem["status"] == "published")
         self.admin.post("/api/auth/logout")
         self.register(self.member, "delete-protection@std.uestc.edu.cn", "记录保护测试成员")
         team = self.member.post("/api/teams", json={

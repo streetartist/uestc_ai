@@ -1,0 +1,19 @@
+FROM eclipse-temurin:8-jdk-focal AS java-runtime
+
+FROM python:3.9-bookworm
+
+COPY --from=java-runtime /opt/java/openjdk /opt/java/openjdk
+ENV JAVA_HOME=/opt/java/openjdk PATH=/opt/java/openjdk/bin:$PATH
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git build-essential xvfb xauth libgl1 libx11-6 libxext6 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m pip install --no-cache-dir 'pip==23.2.1' 'setuptools==65.5.0' 'wheel==0.38.4' \
+    && python3 -m pip install --no-cache-dir 'minedojo==0.1' 'numpy>=1.21,<2' 'Pillow>=9,<12'
+COPY backend/evaluation_adapters /runner/evaluation_adapters
+ENV PYTHONPATH=/runner MINEDOJO_HEADLESS=1
+
+RUN xvfb-run -a python3 -c "import minedojo; env=minedojo.make(task_id='open-ended', image_size=(160,256), world_seed=1042); env.reset(); env.close()"
+
+CMD ["xvfb-run", "-a", "python3", "-m", "evaluation_adapters.minecraft_runner"]

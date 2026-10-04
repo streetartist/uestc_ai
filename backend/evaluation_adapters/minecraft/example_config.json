@@ -1,0 +1,6 @@
+{
+  "planner": "baseline-forward",
+  "memory": {"reset_between_scenarios": true},
+  "skills": {"directory": "/tmp/agent/skills"},
+  "notes": "协议示例，未接入大模型，不保证完成任务。模型凭据由运行环境注入，不能写入此文件。"
+}

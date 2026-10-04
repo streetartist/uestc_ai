@@ -2,7 +2,7 @@
 
 电子科技大学 AI 社的信息发布与通用比赛平台。项目围绕“赛事 -> 赛道 -> 题目 -> 版本提交”组织业务，同时提供组队报名、作品页、人工评审、外部成绩导入、榜单和 Markdown 内容发布。
 
-平台只负责业务数据和材料流转，不运行参赛代码、模型或评测环境。项目仍处于早期阶段，公开部署前请完整阅读 [安全策略](SECURITY.md)。
+Web API 负责业务数据和材料流转；可选的独立工作进程通过受信任的环境镜像运行参赛程序，未接入镜像的题目不可正式提交。项目仍处于早期阶段，公开部署前请完整阅读 [安全策略](SECURITY.md)。
 
 ## 主要功能
 
@@ -12,7 +12,9 @@
 - 编辑：公告、博客、调研和活动内容的草稿与发布
 - 主办方：JSON/CSV 外部成绩导入、批次记录和审计记录
 
-成绩导入绑定 `submission_version_id`。同一作品的后续提交生成新版本，不覆盖已经评审或导入成绩的旧版本。
+成绩导入绑定 `submission_version_id`。当前每个队伍在每道题只有一份当前稿；再次保存或提交会覆盖内容、清除原评审和导入成绩，并废弃旧评测任务。截止后锁定提交。
+
+主办方可从“无界探索”或通用研究挑战模板创建赛题，自定义提交字段、必填材料、ZIP 文件要求、研究报告模板与评分规则。新环境通过受信任的评测器清单和独立运行镜像接入，详见后端说明。
 
 ## 技术栈
 
@@ -24,7 +26,7 @@
 | 内容 | `@uiw/react-md-editor`、`react-markdown`、GFM、HTML 白名单清洗 |
 | 部署 | Cloudflare Worker 兼容的前端构建；Flask API 独立部署 |
 
-四条 2026 春季赛赛道来自演示数据，前后端没有把赛道名称写死在业务逻辑中。后续赛事可以配置其他赛道、提交字段和评分 rubric。
+默认演示数据是完全虚构的“纸城创作节”，仅用于展示流程，不对应真实赛事、赛题或活动。前后端没有把赛道名称写死在业务逻辑中，后续可配置其他赛道、提交字段和评分 rubric。
 
 ## 本地开发
 
@@ -113,7 +115,8 @@ python -m flask --app backend/app.py db upgrade
 ```bash
 pnpm lint
 pnpm test
-python -m unittest discover -s tests -p "test_backend_api.py" -v
+python -m pip install -r backend/requirements-test.txt
+python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
 持续集成会在 Pull request 和 `main` 分支推送时运行相同检查。

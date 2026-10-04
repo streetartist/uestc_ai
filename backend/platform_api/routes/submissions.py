@@ -8,7 +8,9 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request, send_from_directory
 from sqlalchemy import func
 from ..extensions import db
-from ..models import Competition, Problem, Registration, Review, Score, ScoreBatch, StagedSubmissionAsset, Submission, SubmissionAsset, SubmissionVersion, Team, Track, new_id
+from ..models import Competition, EvaluationRun, Problem, Registration, Review, Score, ScoreBatch, StagedSubmissionAsset, Submission, SubmissionAsset, SubmissionVersion, Team, Track, new_id
+from ..evaluation import adapters
+from ..submission_schema import validate_submission_materials
 from ..reviewing import combined_score, effective_reviewer_weights, external_weight_percent, is_review_locked, latest_external_score, review_score
 from ..security import current_user, require_user, team_member
 from ..uploading import file_extension, original_filename, save_with_limit
@@ -79,13 +81,29 @@ def public_work_payload(version: SubmissionVersion, include_content: bool = True
     }
     if include_content:
         data["assets"] = [asset.to_dict() for asset in version.assets]
+        data["evaluation_config"] = submission.problem.evaluation_config
+        data["evaluation"] = current_evaluation(version)
     return data
+
+
+def current_evaluation(version: SubmissionVersion):
+    run = EvaluationRun.query.filter_by(submission_version_id=version.id).order_by(EvaluationRun.created_at.desc()).first()
+    if not run or run.status == "superseded" or run.submission_snapshot.get("captured_at") != (version.snapshot or {}).get("captured_at"):
+        return None
+    return run.to_dict()
 
 
 def overwrite_version(submission: Submission, data: dict, user_id: str):
     version = current_version(submission)
     removed_storage_names = []
     version_ids = [item.id for item in submission.versions]
+    if version_ids:
+        for run in EvaluationRun.query.filter(EvaluationRun.submission_version_id.in_(version_ids)).all():
+            if run.status in {"queued", "running", "completed"}:
+                run.status = "superseded"
+                run.lease_hash = None
+                run.api_token_hash = None
+                run.lease_expires_at = None
     if version_ids:
         Review.query.filter(Review.submission_version_id.in_(version_ids)).delete(synchronize_session=False)
         Score.query.filter(Score.submission_version_id.in_(version_ids)).delete(synchronize_session=False)
@@ -176,9 +194,10 @@ def retained_assets(data: dict, submission: Submission | None):
 @require_user()
 def submit_work():
     user = current_user()
-    data, error = payload(("problem_id", "team_id", "title", "readme_md"))
+    data, error = payload(("problem_id", "team_id", "title"))
     if error:
         return error
+    data.setdefault("readme_md", "")
     status = data.get("status", "draft")
     if status not in {"draft", "submitted"}:
         return jsonify({"error": "invalid submission status"}), 400
@@ -191,6 +210,8 @@ def submit_work():
     team = db.session.get(Team, data["team_id"])
     if not problem or not team:
         return jsonify({"error": "problem or team not found"}), 404
+    if problem.status != "published" or problem.track.competition.status != "published":
+        return jsonify({"error": "problem is not open for submissions"}), 409
     if deadline_passed(problem.track.competition):
         return deadline_response()
     if problem.track.competition_id != team.competition_id:
@@ -207,6 +228,10 @@ def submit_work():
     retained, retained_error = retained_assets(data, submission)
     if retained_error:
         return retained_error
+    try:
+        validate_submission_materials(problem.submission_schema or {}, data, [*staged, *retained], status == "submitted", Path(current_app.config["UPLOAD_FOLDER"]))
+    except ValueError as validation_error:
+        return jsonify({"error": str(validation_error)}), 400
     if not submission:
         submission = Submission(problem=problem, team=team, title=data["title"])
         db.session.add(submission)
@@ -234,6 +259,31 @@ def submit_work():
             visibility=visibility,
         ))
         db.session.delete(staged_asset)
+    evaluation_config = problem.evaluation_config or {}
+    if status == "submitted" and evaluation_config:
+        available = {item.strip() for item in current_app.config["EVALUATION_ENABLED_ADAPTERS"].split(",") if item.strip()}
+        if evaluation_config["adapter"] not in available or not current_app.config["EVALUATION_WORKER_TOKEN"]:
+            db.session.rollback()
+            return jsonify({"error": "evaluation adapter is not connected"}), 503
+        adapter = adapters().get(evaluation_config["adapter"])
+        if not adapter:
+            db.session.rollback()
+            return jsonify({"error": "evaluation adapter is no longer registered"}), 409
+        extension = adapter["submission"]["extension"]
+        packages = [asset for asset in version.assets if asset.original_name.lower().endswith("." + extension)]
+        if len(packages) != 1:
+            db.session.rollback()
+            return jsonify({"error": f"exactly one .{extension} evaluation package is required"}), 400
+        db.session.flush()
+        db.session.add(EvaluationRun(
+            problem=problem, submission_version=version,
+            config_snapshot={**evaluation_config, "metric_definitions": [metric for metric in adapter["metrics"] if metric["key"] in evaluation_config["metrics"]]},
+            submission_snapshot={
+                "captured_at": version.snapshot["captured_at"], "asset_id": packages[0].id,
+                "asset_name": packages[0].original_name,
+            },
+            status="queued",
+        ))
     audit("submission.overwritten", "submission", submission.id, {
         "status": version.status,
         "asset_count": len(staged) + len(retained),
@@ -318,7 +368,8 @@ def delete_draft_submission(submission_id: str):
     version_ids = [version.id for version in submission.versions]
     has_review = Review.query.filter(Review.submission_version_id.in_(version_ids)).first() if version_ids else None
     has_score = Score.query.filter(Score.submission_version_id.in_(version_ids)).first() if version_ids else None
-    if submission.status != "draft" or any(version.status != "draft" for version in submission.versions) or has_review or has_score:
+    has_run = EvaluationRun.query.filter(EvaluationRun.submission_version_id.in_(version_ids)).first() if version_ids else None
+    if submission.status != "draft" or any(version.status != "draft" for version in submission.versions) or has_review or has_score or has_run:
         return jsonify({"error": "only unreviewed drafts can be deleted"}), 409
     storage_names = [asset.storage_name for version in submission.versions for asset in version.assets]
     audit("submission.deleted", "submission", submission.id, {"title": submission.title})
@@ -394,6 +445,8 @@ def upload_asset(version_id: str):
         return jsonify({"error": "team membership required"}), 403
     if deadline_passed(version.submission.problem.track.competition):
         return deadline_response()
+    if version.status in PUBLIC_VERSION_STATUSES and version.submission.problem.evaluation_config:
+        return jsonify({"error": "update the submission to change evaluation attachments"}), 409
     file = request.files.get("file")
     if not file or not file.filename:
         return jsonify({"error": "file is required"}), 400
@@ -454,6 +507,10 @@ def save_review():
     configured, weights = effective_reviewer_weights(competition_id)
     if not configured or user.id not in weights:
         return jsonify({"error": "reviewer is not assigned to this competition"}), 403
+    if version.submission.problem.evaluation_config:
+        evaluation = current_evaluation(version)
+        if not evaluation or evaluation["status"] != "completed":
+            return jsonify({"error": "evaluation must complete before review"}), 409
     review = Review.query.filter_by(submission_version_id=version.id, reviewer_id=user.id).first()
     if not review:
         review = Review(submission_version_id=version.id, reviewer_id=user.id)
@@ -518,6 +575,7 @@ def review_queue():
         "competition": version.submission.problem.track.competition.to_dict(),
         "review_locked": is_review_locked(version.submission.problem.track.competition),
         "assets": [asset.to_dict() for asset in version.assets],
+        "evaluation": current_evaluation(version),
         "reviewer_weight_percent": (
             weight_cache[version.submission.problem.track.competition_id][1].get(user.id)
             * (100 - external_weight_percent(version.submission.problem)) / 100

@@ -26,11 +26,12 @@ export default function ProblemPage() {
           <div className="problem-content">
             <div className="problem-summary"><StatusPill tone={data.status === "published" ? "live" : "warm"}>{data.status === "published" ? "正式赛题" : "候选题目"}</StatusPill><p>{data.summary}</p></div>
             <Markdown>{stripRepeatedLead(data.statement_md ?? "题面正在整理。", data.title, data.summary)}</Markdown>
-            <section className="detail-section"><h2>提交材料</h2><div className="requirement-list">{(data.submission_schema.fields ?? []).map((field) => <div key={field}><FileCheck2 size={16} /><span><strong>{fieldLabels[field] ?? field}</strong><small>在作品表单中填写或上传</small></span></div>)}</div></section>
+            <section className="detail-section"><h2>提交材料</h2><div className="requirement-list">{(data.submission_schema.fields ?? []).map((field) => { const spec = data.submission_schema.field_definitions?.[field]; return <div key={field}><FileCheck2 size={16} /><span><strong>{spec?.label || fieldLabels[field] || field}{spec?.required ? "（必填）" : ""}</strong><small>{spec?.help || "在作品表单中填写"}</small></span></div>; })}{data.submission_schema.attachments?.map((item) => <div key={`attachment-${item.key}`}><FileCheck2 size={16} /><span><strong>{item.label}{item.min_count > 0 ? "（必交）" : "（可选）"}</strong><small>{item.extensions.map((ext) => `.${ext}`).join(" / ")}；{item.min_count}—{item.max_count} 个附件</small></span></div>)}</div></section>
+            {data.evaluation_config?.adapter && <section className="detail-section"><h2>程序运行</h2><p>请随作品上传一个 .zip 程序包。运行任务：{data.evaluation_config.task}；运行 {data.evaluation_config.resources?.episodes} 次。运行指标会显示在作品页，供评委参考。</p></section>}
             <section className="detail-section"><h2>评分构成</h2><div className="rubric-list">{Object.entries(data.judging_schema.rubric ?? {}).map(([name, weight]) => <div key={name}><span>{fieldLabels[name] ?? name}</span><i /><strong>{Math.round(weight * 100)}%</strong></div>)}</div></section>
           </div>
           <aside className="problem-aside">
-            <dl className="facts-list"><div><dt><Gauge size={15} />难度</dt><dd>{data.difficulty}/5</dd></div><div><dt><Cpu size={15} />算力建议</dt><dd>{data.compute_note || "按题目说明"}</dd></div><div><dt><Scale size={15} />平台职责</dt><dd>记录提交与成绩，不执行代码</dd></div></dl>
+            <dl className="facts-list"><div><dt><Gauge size={15} />难度</dt><dd>{data.difficulty}/5</dd></div><div><dt><Cpu size={15} />算力建议</dt><dd>{data.compute_note || "按题目说明"}</dd></div><div><dt><Scale size={15} />运行方式</dt><dd>{data.evaluation_config?.adapter ? "独立环境运行" : "上传材料"}</dd></div></dl>
             {data.source_url && <a className="source-link" href={data.source_url} target="_blank" rel="noreferrer">查看外部资料 <ExternalLink size={14} /></a>}
             <div className="submit-callout"><span>准备好提交？</span><p>先登录并为队伍报名当前赛道。</p><Link className="primary-button" href={`/submit/${data.slug}`}>提交这个题目 <ArrowRight size={16} /></Link></div>
           </aside>

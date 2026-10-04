@@ -1,0 +1,25 @@
+{
+  "id": "research-challenge",
+  "name": "通用智能体 / 研究挑战",
+  "description": "可配置任务背景、提交材料、研究报告和评分规则；按需选择运行评测器。",
+  "problem": {
+    "code": "AI-001", "slug": "research-challenge", "title": "智能体研究挑战", "summary": "在统一环境中完成任务，并提交可复现的系统实现与研究报告。",
+    "difficulty": 3, "compute_note": "请填写统一环境、模型接口、资源预算和运行时限。",
+    "statement_md": "# 智能体研究挑战\n\n## 任务背景\n\n说明环境、目标与研究问题。\n\n## 输入与行动接口\n\n说明观察、状态、行动、代码执行方式与反馈协议。\n\n## 任务与场景\n\n说明公开练习与保密测试划分、场景变化、成功判定、失败恢复及记忆复用规则。\n\n## 统一环境与资源\n\n说明环境版本、镜像、CPU/GPU/内存、时限、模型接口、调用预算及依赖安装方式。\n\n## 提交材料\n\n提交代码与运行配置 ZIP、研究报告 PDF 和复现说明。研究报告包含系统设计、策略实现、实验表现与典型案例分析。\n\n## 评价规则\n\n明确每个指标的来源、计算口径与评分权重。观测指标仅作展示，正式成绩使用在线评审或外部成绩导入。\n\n## 开放条件\n\n发布前完成环境、接口、基线、资源预算和评测规则验收。",
+    "submission_schema": {
+      "fields": ["repository", "runtime_notes"],
+      "field_definitions": {
+        "repository": {"label": "代码仓库", "type": "url", "required": false},
+        "runtime_notes": {"label": "运行与复现说明", "type": "textarea", "required": true}
+      },
+      "readme_required": true,
+      "readme_template": "# 作品名称\n\n## 系统设计\n\n## 策略实现\n\n## 运行配置与复现\n\n## 实验表现\n\n## 典型案例与失败分析\n\n## 局限与资源使用声明\n",
+      "attachments": [
+        {"key": "code", "label": "代码与运行配置", "extensions": ["zip"], "min_count": 1, "max_count": 1},
+        {"key": "report", "label": "研究报告", "extensions": ["pdf"], "min_count": 1, "max_count": 1}
+      ]
+    },
+    "judging_schema": {"rubric": {"系统设计": 0.3, "实验表现": 0.3, "典型案例分析": 0.2, "报告与可复现性": 0.2}},
+    "scoring_config": {"external_weight_percent": 0}, "evaluation_config": {}
+  }
+}

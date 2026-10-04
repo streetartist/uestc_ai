@@ -59,6 +59,7 @@ export function formatApiError(error: unknown): string {
       "registration deadline has passed": "报名已经截止，不能再创建、加入队伍或修改报名。",
       "submission deadline has passed": "作品提交已经截止，不能再保存、提交或修改附件。",
       "submission is not formally submitted": "当前作品不是正式提交状态，不能评分。",
+      "evaluation must complete before review": "自动评测尚未成功完成，请等待有效指标生成后再评分。",
       "verification code requested too frequently": "验证码发送过于频繁，请稍后再试。",
       "verification code hourly limit reached": "验证码发送次数已达上限，请一小时后再试。",
       "email delivery is not configured": "邮件服务尚未配置，请联系管理员。",

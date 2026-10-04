@@ -22,6 +22,9 @@ from ..models import (
     User,
 )
 from ..reviewing import REVIEWER_ROLES, calculate_effective_weights, combined_score, effective_reviewer_weights, external_weight_percent, is_review_locked, latest_external_score, validate_scoring_config
+from ..evaluation import validate_evaluation_config
+from ..problem_templates import templates
+from ..submission_schema import validate_submission_schema
 from ..security import current_user, hash_token, require_user
 from ..utils import audit
 
@@ -34,7 +37,7 @@ COMPETITION_FIELDS = {
 TRACK_FIELDS = {"slug", "name", "description", "position", "config"}
 PROBLEM_FIELDS = {
     "code", "slug", "title", "summary", "status", "statement_md",
-    "submission_schema", "judging_schema", "scoring_config", "difficulty", "compute_note", "source_url",
+    "submission_schema", "judging_schema", "scoring_config", "evaluation_config", "difficulty", "compute_note", "source_url",
 }
 DATETIME_FIELDS = {"registration_opens_at", "registration_closes_at", "starts_at", "ends_at"}
 USER_ROLES = {"member", "reviewer", "editor", "organizer", "admin"}
@@ -228,6 +231,12 @@ def delete_track(track_id: str):
     return "", 204
 
 
+@manage_bp.get("/manage/problem-templates")
+@require_user("admin", "organizer")
+def problem_templates():
+    return jsonify(templates())
+
+
 @manage_bp.patch("/manage/problems/<problem_id>")
 @require_user("admin", "organizer")
 def update_problem(problem_id: str):
@@ -235,6 +244,11 @@ def update_problem(problem_id: str):
     if not problem:
         return jsonify({"error": "problem not found"}), 404
     data = request.get_json(silent=True) or {}
+    if "submission_schema" in data:
+        try:
+            data["submission_schema"] = validate_submission_schema(data["submission_schema"])
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
     if is_review_locked(problem.track.competition) and ({"judging_schema", "scoring_config"} & set(data)):
         return jsonify({"error": "online review is locked for this competition"}), 409
     if "slug" in data:
@@ -250,6 +264,13 @@ def update_problem(problem_id: str):
             data["scoring_config"] = validate_scoring_config(data["scoring_config"])
         except ValueError as error:
             return jsonify({"error": str(error)}), 400
+    if "evaluation_config" in data or "scoring_config" in data:
+        try:
+            data["evaluation_config"] = validate_evaluation_config(data.get("evaluation_config", problem.evaluation_config))
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
+        if Submission.query.filter_by(problem_id=problem.id).first() and data["evaluation_config"] != (problem.evaluation_config or {}):
+            return jsonify({"error": "evaluation rules cannot change after submissions"}), 409
     update_fields(problem, data, PROBLEM_FIELDS)
     audit("problem.updated", "problem", problem.id, {"fields": sorted(set(data) & PROBLEM_FIELDS)})
     db.session.commit()

@@ -156,14 +156,16 @@ class Problem(TimestampMixin, db.Model):
     submission_schema = db.Column(db.JSON, nullable=False, default=dict)
     judging_schema = db.Column(db.JSON, nullable=False, default=dict)
     scoring_config = db.Column(db.JSON, nullable=False, default=dict)
+    evaluation_config = db.Column(db.JSON, nullable=False, default=dict)
     difficulty = db.Column(db.Integer, nullable=False, default=3)
     compute_note = db.Column(db.Text, nullable=False, default="")
     source_url = db.Column(db.String(500))
     track = db.relationship("Track", back_populates="problems")
     submissions = db.relationship("Submission", back_populates="problem", cascade="all, delete-orphan")
+    evaluation_runs = db.relationship("EvaluationRun", back_populates="problem", cascade="all, delete-orphan")
 
     def to_dict(self, include_statement=False):
-        data = {"id": self.id, "track_id": self.track_id, "code": self.code, "slug": self.slug, "title": self.title, "summary": self.summary, "status": self.status, "difficulty": self.difficulty, "compute_note": self.compute_note, "source_url": self.source_url, "submission_schema": self.submission_schema, "judging_schema": self.judging_schema, "scoring_config": self.scoring_config}
+        data = {"id": self.id, "track_id": self.track_id, "code": self.code, "slug": self.slug, "title": self.title, "summary": self.summary, "status": self.status, "difficulty": self.difficulty, "compute_note": self.compute_note, "source_url": self.source_url, "submission_schema": self.submission_schema, "judging_schema": self.judging_schema, "scoring_config": self.scoring_config, "evaluation_config": self.evaluation_config}
         if include_statement:
             data["statement_md"] = self.statement_md
         return data
@@ -380,6 +382,39 @@ class Score(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     batch = db.relationship("ScoreBatch", back_populates="scores")
     version = db.relationship("SubmissionVersion")
+
+
+class EvaluationRun(TimestampMixin, db.Model):
+    __tablename__ = "evaluation_runs"
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    problem_id = db.Column(db.String(36), db.ForeignKey("problems.id", ondelete="CASCADE"), nullable=False, index=True)
+    submission_version_id = db.Column(db.String(36), db.ForeignKey("submission_versions.id", ondelete="CASCADE"), nullable=False, index=True)
+    config_snapshot = db.Column(db.JSON, nullable=False)
+    submission_snapshot = db.Column(db.JSON, nullable=False)
+    status = db.Column(db.String(24), nullable=False, default="queued", index=True)
+    attempts = db.Column(db.Integer, nullable=False, default=0)
+    lease_hash = db.Column(db.String(64))
+    api_token_hash = db.Column(db.String(64))
+    lease_expires_at = db.Column(db.DateTime(timezone=True))
+    metrics = db.Column(db.JSON, nullable=False, default=dict)
+    episodes = db.Column(db.JSON, nullable=False, default=list)
+    api_calls_used = db.Column(db.Integer, nullable=False, default=0)
+    error = db.Column(db.String(500))
+    started_at = db.Column(db.DateTime(timezone=True))
+    finished_at = db.Column(db.DateTime(timezone=True))
+    problem = db.relationship("Problem", back_populates="evaluation_runs")
+    submission_version = db.relationship("SubmissionVersion")
+
+    def to_dict(self):
+        return {
+            "id": self.id, "problem_id": self.problem_id, "submission_version_id": self.submission_version_id,
+            "adapter": self.config_snapshot["adapter"], "status": self.status, "attempts": self.attempts,
+            "metrics": self.metrics, "episodes": self.episodes, "error": self.error,
+            "metric_definitions": self.config_snapshot.get("metric_definitions", []),
+            "api_calls_used": self.api_calls_used,
+            "created_at": iso(self.created_at), "started_at": iso(self.started_at),
+            "finished_at": iso(self.finished_at),
+        }
 
 
 class Content(TimestampMixin, db.Model):

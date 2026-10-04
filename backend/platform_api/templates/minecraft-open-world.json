@@ -1,0 +1,36 @@
+{
+  "id": "minecraft-open-world",
+  "name": "无界探索：开放世界智能体",
+  "description": "统一探索环境、受控模型接口、智能体程序包和完整研究报告。",
+  "problem": {
+    "code": "OW-001",
+    "slug": "open-world-minecraft-agent",
+    "title": "无界探索：开放世界智能体挑战赛",
+    "summary": "基于大模型的开放世界自主决策竞赛，考察环境理解、任务规划、代码执行与经验积累。",
+    "difficulty": 5,
+    "compute_note": "拟定 4 CPU、8 GB 内存、3600 秒、3 个独立场景及 300 次受控模型调用；正式参数须经环境验收后公布。",
+    "statement_md": "# 无界探索：开放世界智能体挑战赛\n\n## 世界探索智能体赛道\n\n开放世界中的环境信息与任务目标不断变化，智能体需要自主观察、探索和作出决策，将短期行动组织为长期目标。这一场景能够集中考察智能体的环境理解、任务规划、代码执行与经验积累能力。\n\n## 挑战目标\n\n参赛者需构建能够观察环境画面、读取自身状态、生成并执行代码的智能体，在限定时间内完成自主探索与任务执行。组织方提供统一探索环境与模型接口。参赛者可围绕目标分解、技能保存与复用、记忆管理和失败恢复优化方案，使智能体根据行动结果不断调整策略。\n\n## 环境与场景\n\nMinecraft 接入草案采用 MineDojo 开放世界环境，拟提供入门、进阶和挑战三个独立场景，逐步考察资源采集、工具链构建和长程任务规划。当前可信控制器只能判定背包物品目标；场景设计、种子策略、任务变化方式和资源限制需通过真实环境验收后固定。目标变化、建造、战斗等任务需要额外环境事件采集，不能宣称当前已实现。公开练习场景与保密测试场景分离。\n\n## 智能体交付协议\n\n上传一个 ZIP 程序包，根目录包含 agent.py 与 config.json。agent.py 定义 Agent，提供 act(observation)，可提供 reset(goal) 和 configure(config)。观察包含画面 image_jpeg_base64、背包 inventory、位置 position、生命值 health 和 noop_action；act 返回环境的 8 维动作列表。规划、生成代码及执行代码由参赛智能体在隔离容器内完成，平台仅负责交付观察与执行返回动作。不得让参赛代码写入评测指标或读取隐藏场景。\n\nconfig.json 为智能体运行配置，可记录规划策略、记忆与技能库设置及模型调用参数；不包含模型密钥，不改变主办方 CPU、内存、时限或 API 限额。需说明代码生成与执行机制、技能持久化位置、跨场景记忆策略和复现方式。受控模型代理在运行时提供地址与短期令牌；调用协议和可用模型以正式赛规为准。\n\n## 提交材料\n\n1. 智能体代码与 config.json，打包为一个 ZIP。\n2. 一篇完整研究报告（PDF），说明系统设计、策略实现、实验表现与典型案例分析。\n3. 表单中的运行说明，含入口、依赖、配置、记忆与技能库使用方式。代码仓库地址及演示视频可选。\n\n报告应覆盖目标分解、观察理解、代码生成与执行、技能保存与复用、记忆管理、失败恢复、分场景结果和局限。单个附件上限 20 MB；额外依赖和更大模型需先协调运行镜像与存储方案。\n\n## 评价与展示\n\n可信环境记录探索进度、任务完成情况及执行表现，公开逐场景结果与汇总指标。探索进度当前按物品目标完成比例计算，移动距离仅作观测，不能等同于探索能力。适应能力通过未知场景实验、失败恢复案例与研究报告评审考察，当前没有自动适应能力指标。模型调用量按整次运行记录。\n\n运行指标供作品展示和评委参考；最终成绩由已公布的评审规则及外部成绩权重决定。下列评分权重为可编辑的筹备建议，正式发布前须确定。\n\n## 当前开放状态\n\n本模板创建草稿。组织方完成真实 Minecraft 环境、固定镜像、模型代理和隔离验收后，才能启用正式程序评测与提交。",
+    "submission_schema": {
+      "fields": ["repository", "runtime_notes", "demo_video"],
+      "field_definitions": {
+        "repository": {"label": "代码仓库地址", "type": "url", "required": false, "help": "可选；最终运行使用上传的 ZIP 程序包。"},
+        "runtime_notes": {"label": "运行与复现说明", "type": "textarea", "required": true, "help": "说明入口、依赖、config.json、代码生成执行机制、技能库及记忆策略。"},
+        "demo_video": {"label": "典型案例演示视频", "type": "url", "required": false, "help": "可选；建议包含成功与失败恢复案例。"}
+      },
+      "readme_required": true,
+      "readme_template": "# 作品名称\n\n## 系统设计\n\n说明观察、规划、代码生成与执行、反馈循环和模块关系。\n\n## 策略实现\n\n说明目标分解、技能保存与复用、记忆管理及失败恢复。\n\n## 运行配置与复现\n\n说明 agent.py、config.json、依赖和启动方式。\n\n## 实验表现\n\n分别报告各场景目标完成情况、探索进度、调用消耗与基线或消融实验。\n\n## 典型案例分析\n\n给出成功、失败和恢复过程，分析未知场景中的适应能力。\n\n## 局限与改进\n\n说明尚未解决的问题和后续方向。\n\n## 模型及资源使用声明\n\n说明使用的模型、数据、技能来源与授权。\n",
+      "attachments": [
+        {"key": "agent_code", "label": "智能体代码与运行配置", "extensions": ["zip"], "min_count": 1, "max_count": 1, "required_files": ["agent.py", "config.json"]},
+        {"key": "research_report", "label": "完整研究报告", "extensions": ["pdf"], "min_count": 1, "max_count": 1}
+      ]
+    },
+    "judging_schema": {"rubric": {"系统设计与策略实现": 0.3, "探索与任务完成表现": 0.3, "适应能力与失败恢复分析": 0.2, "研究报告与可复现性": 0.2}},
+    "scoring_config": {"external_weight_percent": 0},
+    "evaluation_config": {
+      "adapter": "minecraft-agent-v1", "task": "open-world",
+      "resources": {"cpus": 4, "memory_mb": 8192, "gpu": false, "time_seconds": 3600, "episodes": 3},
+      "api": {"enabled": true, "max_calls": 300},
+      "metrics": ["task_success", "exploration_progress", "objectives", "unique_items", "distance_blocks", "tech_milestones", "deaths", "invalid_actions", "mean_step_ms"]
+    }
+  }
+}

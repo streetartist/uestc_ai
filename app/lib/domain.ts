@@ -32,9 +32,68 @@ export type Problem = {
   difficulty: number;
   compute_note: string;
   source_url?: string | null;
-  submission_schema: { fields?: string[]; readme_required?: boolean };
+  submission_schema: SubmissionSchema;
   judging_schema: { rubric?: Record<string, number> };
   scoring_config: { external_weight_percent?: number };
+  evaluation_config: EvaluationConfig;
+};
+
+export type SubmissionFieldDefinition = {
+  label?: string;
+  type?: "text" | "url" | "textarea";
+  required?: boolean;
+  help?: string;
+  placeholder?: string;
+};
+
+export type SubmissionSchema = {
+  fields?: string[];
+  field_definitions?: Record<string, SubmissionFieldDefinition>;
+  readme_required?: boolean;
+  readme_template?: string;
+  attachments?: Array<{ key: string; label: string; extensions: string[]; min_count: number; max_count: number; required_files?: string[] }>;
+};
+
+export type ProblemTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  problem: Omit<Problem, "id" | "track_id" | "status"> & { status: "draft" };
+};
+
+export type EvaluationConfig = {
+  adapter: string;
+  task: string;
+  resources: { cpus: number; memory_mb: number; gpu: boolean; time_seconds: number; episodes: number };
+  api: { enabled: boolean; max_calls: number };
+  metrics: string[];
+} | { adapter?: undefined; task?: undefined; resources?: undefined; api?: undefined; metrics?: undefined };
+
+export type EvaluationAdapter = {
+  id: string;
+  name: string;
+  available: boolean;
+  submission: { extension: string; label: string };
+  tasks: string[];
+  metrics: { key: string; label: string; unit: string; direction: "min" | "max"; min: number; max: number }[];
+};
+
+export type EvaluationRun = {
+  id: string;
+  adapter: string;
+  status: "queued" | "running" | "completed" | "failed" | "superseded";
+  attempts: number;
+  api_calls_used: number;
+  metrics: Record<string, number>;
+  metric_definitions: EvaluationAdapter["metrics"];
+  episodes: Array<Record<string, number> | {
+    scenario: { id: string; label: string; difficulty: "beginner" | "intermediate" | "challenge" };
+    metrics: Record<string, number>;
+  }>;
+  error: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
 };
 
 export type Track = {
@@ -137,6 +196,8 @@ export type PublicWork = Submission & {
   track: Pick<Track, "id" | "slug" | "name">;
   competition: Pick<Competition, "id" | "slug" | "name">;
   version: SubmissionVersion;
+  evaluation?: EvaluationRun | null;
+  evaluation_config?: EvaluationConfig;
 };
 
 export type StagedSubmissionAsset = {
@@ -181,6 +242,7 @@ export type ReviewQueueItem = SubmissionVersion & {
   competition: Competition;
   reviewer_weight_percent?: number | null;
   review_locked: boolean;
+  evaluation?: EvaluationRun | null;
   my_review: null | {
     id: string;
     scores: Record<string, number>;

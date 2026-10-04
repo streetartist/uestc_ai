@@ -5,13 +5,15 @@ import { FormEvent, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, FilePlus2, Save, Trash2 } from "lucide-react";
 import { AppShell } from "@/app/components/AppShell";
+import { EvaluationConfigEditor } from "@/app/components/EvaluationConfigEditor";
+import { SubmissionSchemaEditor } from "@/app/components/SubmissionSchemaEditor";
 import { ConfirmDialog } from "@/app/components/ConfirmDialog";
 import { MarkdownEditor } from "@/app/components/MarkdownEditor";
 import { useSession } from "@/app/components/SessionProvider";
 import { useToast } from "@/app/components/ToastProvider";
 import { FieldError, PageError, PageLoading, StatusPill } from "@/app/components/ui";
 import { api, formatApiError, jsonBody } from "@/app/lib/api";
-import type { Competition, Problem, Track } from "@/app/lib/domain";
+import type { Competition, EvaluationConfig, Problem, ProblemTemplate, SubmissionSchema, Track } from "@/app/lib/domain";
 import { validateForm } from "@/app/lib/formValidation";
 import { useApiResource } from "@/app/lib/useApiResource";
 
@@ -92,9 +94,13 @@ function ProblemEditor({ problem, initialTrack, competition, tracks, isNew, onCr
   const [computeNote, setComputeNote] = useState(problem?.compute_note ?? "");
   const [sourceUrl, setSourceUrl] = useState(problem?.source_url ?? "");
   const [externalWeight, setExternalWeight] = useState(String(problem?.scoring_config?.external_weight_percent ?? 0));
+  const [evaluationConfig, setEvaluationConfig] = useState<EvaluationConfig>(problem?.evaluation_config ?? {});
   const [externalWeightError, setExternalWeightError] = useState("");
   const [statement, setStatement] = useState(problem?.statement_md ?? initialStatement);
-  const [submissionFields, setSubmissionFields] = useState((problem?.submission_schema.fields ?? ["repository", "report"]).join(", "));
+  const [submissionSchema, setSubmissionSchema] = useState<SubmissionSchema>(problem?.submission_schema ?? { fields: ["repository", "report"], readme_required: true });
+  const { data: templates, error: templateError } = useApiResource<ProblemTemplate[]>("/manage/problem-templates");
+  const [templateId, setTemplateId] = useState("");
+  const [templateConfirmOpen, setTemplateConfirmOpen] = useState(false);
   const [rubric, setRubric] = useState(rubricText(problem) || "engineering: 0.4\ncompleteness: 0.3\nidea: 0.3");
   const [formError, setFormError] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -102,6 +108,18 @@ function ProblemEditor({ problem, initialTrack, competition, tracks, isNew, onCr
   const [deleteError, setDeleteError] = useState("");
   const toast = useToast();
   const selectedTrack = tracks.find((item) => item.track.id === trackId) ?? { track: initialTrack, competition };
+
+  function applyTemplate() {
+    const template = templates?.find((item) => item.id === templateId)?.problem;
+    if (!template) return;
+    setCode(template.code); setSlug(template.slug); setTitle(template.title);
+    setSummary(template.summary); setStatus("draft"); setDifficulty(template.difficulty);
+    setComputeNote(template.compute_note); setSourceUrl(template.source_url ?? "");
+    setStatement(template.statement_md ?? initialStatement); setSubmissionSchema(template.submission_schema);
+    setRubric(Object.entries(template.judging_schema.rubric ?? {}).map(([name, weight]) => `${name}: ${weight}`).join("\n"));
+    setExternalWeight(String(template.scoring_config.external_weight_percent ?? 0)); setEvaluationConfig(template.evaluation_config);
+    setTemplateConfirmOpen(false); toast.success("模板已载入，保存后创建草稿");
+  }
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -125,12 +143,10 @@ function ProblemEditor({ problem, initialTrack, competition, tracks, isNew, onCr
         compute_note: computeNote,
         source_url: sourceUrl || null,
         statement_md: statement,
-        submission_schema: {
-          fields: submissionFields.split(",").map((field) => field.trim()).filter(Boolean),
-          readme_required: true,
-        },
+        submission_schema: submissionSchema,
         judging_schema: { rubric: parseRubric(rubric) },
         scoring_config: { external_weight_percent: parsedExternalWeight },
+        evaluation_config: evaluationConfig,
       };
       if (isNew) {
         const result = await api<Problem>(`/tracks/${trackId}/problems`, { method: "POST", ...jsonBody(body) });
@@ -177,12 +193,13 @@ function ProblemEditor({ problem, initialTrack, competition, tracks, isNew, onCr
             </div>
           </div>
           <>
+            {isNew && <fieldset className="evaluation-editor"><legend>从赛题模板开始</legend><label className="form-field"><span>选择模板</span><select value={templateId} onChange={(event) => setTemplateId(event.target.value)}><option value="">自定义赛题</option>{templates?.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><small>{templates?.find((item) => item.id === templateId)?.description ?? "可自行配置任务题面、交付材料与评分规则。"}</small></label><button className="outline-button" type="button" disabled={!templateId} onClick={() => setTemplateConfirmOpen(true)}>载入模板</button>{templateError && <p role="alert">模板暂时无法载入：{templateError}</p>}</fieldset>}
             <div className="form-grid">
               <label className="form-field"><span>所属赛道</span><select value={trackId} onChange={(event) => setTrackId(event.target.value)} disabled={!isNew}>{tracks.map((item) => <option value={item.track.id} key={item.track.id}>{item.competition.name} / {item.track.name}</option>)}</select></label>
               <label className="form-field"><span>状态</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="draft">草稿</option><option value="candidate">候选题</option><option value="published">正式发布</option><option value="archived">归档</option></select></label>
             </div>
             <div className="form-grid">
-              <label className="form-field"><span>题目编号</span><input value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder="DL-001" required /></label>
+              <label className="form-field"><span>题目编号</span><input value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder="PM-001" required /></label>
               <label className="form-field"><span>URL 标识</span><input value={slug} onChange={(event) => setSlug(event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))} placeholder="problem-name" required /></label>
             </div>
             <label className="form-field"><span>题目名称</span><input value={title} onChange={(event) => setTitle(event.target.value)} required /></label>
@@ -193,17 +210,19 @@ function ProblemEditor({ problem, initialTrack, competition, tracks, isNew, onCr
             </div>
             <label className="form-field"><span>算力与环境说明</span><input value={computeNote} onChange={(event) => setComputeNote(event.target.value)} /></label>
             <label className="form-field external-score-field" data-invalid={Boolean(externalWeightError)}><span>外部评分权重</span><span className="unit-input"><input type="number" min="0" max="100" step="1" value={externalWeight} onChange={(event) => { setExternalWeight(event.target.value); setExternalWeightError(""); }} aria-invalid={Boolean(externalWeightError)} /><b>%</b></span><FieldError>{externalWeightError}</FieldError><small>0% 仅在线评审，100% 仅外部评分；中间值会与在线评审按比例合并。</small></label>
+            <EvaluationConfigEditor value={evaluationConfig} onChange={setEvaluationConfig} />
             <MarkdownEditor label="题面" name="problem-statement" value={statement} onChange={setStatement} required height={580} />
+            <SubmissionSchemaEditor value={submissionSchema} onChange={setSubmissionSchema} />
             <div className="form-grid">
-              <label className="form-field"><span>提交字段</span><textarea value={submissionFields} onChange={(event) => setSubmissionFields(event.target.value)} rows={5} /><small>使用英文逗号分隔，例如 repository, demo_url, report</small></label>
               <label className="form-field"><span>评分项与权重</span><textarea className="mono-textarea" value={rubric} onChange={(event) => setRubric(event.target.value)} rows={5} /><small>每行一个，例如 engineering: 0.4</small></label>
             </div>
           </>
           <FieldError>{formError}</FieldError>
         </form>
-        <aside className="problem-editor-guide"><FilePlus2 size={19} /><strong>发布检查</strong><ul><li>题目目标与交付物明确</li><li>提交字段和评分项一致</li><li>外部数据和授权可访问</li><li>平台只记录材料，不执行代码</li></ul><p>将状态设为“正式发布”并保存后，题目会出现在公开赛道页面。</p></aside>
+        <aside className="problem-editor-guide"><FilePlus2 size={19} /><strong>发布检查</strong><ul><li>题目目标与交付物明确</li><li>提交字段和评分项一致</li><li>环境、接口与资源预算已确认</li><li>程序评测器已通过运行验收</li></ul><p>将状态设为“正式发布”并保存后，题目会出现在公开赛道页面。只收材料的题目可不配置程序评测器。</p></aside>
       </div>
     </AppShell>
+    <ConfirmDialog open={templateConfirmOpen} title="载入赛题模板？" confirmLabel="载入模板" description="将替换当前表单的题面、材料要求、评分与运行配置，并设为草稿。保存后才会写入平台。" onCancel={() => setTemplateConfirmOpen(false)} onConfirm={applyTemplate} />
     <ConfirmDialog open={deleteOpen} title={`删除赛题“${problem?.title ?? ""}”？`} description="没有作品提交时可以删除；已有提交的赛题必须保留版本记录并改为归档。" busy={deleting} error={deleteError} onCancel={() => { setDeleteOpen(false); setDeleteError(""); }} onConfirm={() => void remove()} />
   </>;
 }
