@@ -30,6 +30,7 @@ type MarkdownEditorProps = {
   minHeight?: number;
   help?: string;
   name?: string;
+  scope?: "contribution";
 };
 
 function insertAtSelection(value: string, insertion: string, textarea?: HTMLTextAreaElement) {
@@ -47,7 +48,7 @@ function markdownLabel(value: string) {
   return value.replace(/([\\[\]])/g, "\\$1");
 }
 
-export function MarkdownEditor({ label, value, onChange, required = false, height = 500, minHeight = 360, help, name }: MarkdownEditorProps) {
+export function MarkdownEditor({ label, value, onChange, required = false, height = 500, minHeight = 360, help, name, scope }: MarkdownEditorProps) {
   const generatedId = useId();
   const editorId = name ?? `markdown-${generatedId.replace(/:/g, "")}`;
   const editorRef = useRef<ContextStore | null>(null);
@@ -74,6 +75,7 @@ export function MarkdownEditor({ label, value, onChange, required = false, heigh
     try {
       const form = new FormData();
       form.set("file", file);
+      if (scope) form.set("scope", scope);
       const asset = await api<MarkdownAsset>("/markdown-assets", { method: "POST", body: form });
       const label = markdownLabel(asset.original_name);
       const markdown = asset.kind === "image"

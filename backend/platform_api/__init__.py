@@ -18,6 +18,7 @@ from .routes.evaluations import evaluations_bp
 from .routes.ai import ai_bp
 from .routes.compute import compute_bp
 from .routes.problem_setup import setup_bp
+from .routes.profiles import profiles_bp
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -32,7 +33,11 @@ def create_app(test_config: dict | None = None) -> Flask:
             "sqlite:///" + str(Path(__file__).resolve().parents[1] / "data" / "uestc_ai.sqlite3"),
         ),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
-        UPLOAD_FOLDER=str(Path(__file__).resolve().parents[1] / "uploads"),
+        SQLALCHEMY_ENGINE_OPTIONS={"pool_pre_ping": True},
+        UPLOAD_FOLDER=os.environ.get("UPLOAD_FOLDER") or str(Path(__file__).resolve().parents[1] / "uploads"),
+        REDIS_URL=os.environ.get("REDIS_URL", ""),
+        REDIS_CACHE_PREFIX=os.environ.get("REDIS_CACHE_PREFIX", "uestc-ai:public:v1"),
+        REDIS_CACHE_TTL=int(os.environ.get("REDIS_CACHE_TTL", "30")),
         MAX_CONTENT_LENGTH=25 * 1024 * 1024,
         MARKDOWN_ASSET_MAX_SIZE=8 * 1024 * 1024,
         SUBMISSION_ASSET_MAX_SIZE=20 * 1024 * 1024,
@@ -68,6 +73,13 @@ def create_app(test_config: dict | None = None) -> Flask:
     )
     if test_config:
         app.config.update(test_config)
+    if app.config["SQLALCHEMY_DATABASE_URI"].startswith("postgresql"):
+        options = app.config["SQLALCHEMY_ENGINE_OPTIONS"]
+        for name, value in {"pool_size": 4, "max_overflow": 4, "pool_timeout": 10, "pool_recycle": 300}.items():
+            options.setdefault(name, value)
+    if os.environ.get("TRUST_PROXY", "0") == "1":
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
     if app.config["SEED_DATABASE"] and (
         not app.config["INITIAL_ADMIN_PASSWORD"]
@@ -105,8 +117,11 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(compute_bp, url_prefix="/api")
     app.register_blueprint(setup_bp, url_prefix="/api")
     app.register_blueprint(content_bp, url_prefix="/api")
+    app.register_blueprint(profiles_bp, url_prefix="/api")
     app.register_blueprint(manage_bp, url_prefix="/api")
     app.register_blueprint(markdown_assets_bp, url_prefix="/api")
+    from .public_cache import init_public_cache
+    init_public_cache(app)
 
     @app.get("/api/health")
     def health():

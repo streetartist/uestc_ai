@@ -1,0 +1,22 @@
+[Unit]
+Description=UESTC AI website
+After=network-online.target uestc-ai-api.service
+Wants=network-online.target
+
+[Service]
+User=uestc-ai
+Group=uestc-ai
+WorkingDirectory=/opt/uestc-ai/current
+EnvironmentFile=/etc/uestc-ai/web.env
+ExecStart=/usr/local/bin/node node_modules/vinext/dist/cli.js start --hostname 127.0.0.1 --port 3000
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/uestc-ai/shared
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target

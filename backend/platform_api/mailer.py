@@ -11,8 +11,9 @@ class MailDeliveryError(RuntimeError):
     pass
 
 
-def verification_email_html(code: str) -> str:
+def verification_email_html(code: str, purpose: str = "register") -> str:
     digits = "".join(f'<span style="display:inline-block;min-width:28px">{digit}</span>' for digit in code)
+    action = "重置账户密码" if purpose == "reset" else "完成平台注册"
     return f"""<!doctype html>
 <html lang="zh-CN">
   <body style="margin:0;background:#f2f0ea;color:#262723;font-family:Arial,'Microsoft YaHei',sans-serif">
@@ -22,7 +23,7 @@ def verification_email_html(code: str) -> str:
           <tr><td style="padding:30px 34px 14px">
             <div style="font-size:12px;letter-spacing:2px;color:#6c6e67">UESTC AI</div>
             <h1 style="margin:18px 0 8px;font-family:Georgia,'Noto Serif SC',serif;font-size:27px;font-weight:400">验证你的邮箱</h1>
-            <p style="margin:0;color:#686a64;font-size:14px;line-height:1.8">使用下面的验证码完成平台注册。验证码在 10 分钟内有效。</p>
+            <p style="margin:0;color:#686a64;font-size:14px;line-height:1.8">使用下面的验证码{action}。验证码在 10 分钟内有效。</p>
           </td></tr>
           <tr><td style="padding:18px 34px">
             <div style="border:1px solid #d7d3ca;background:#f5f3ee;padding:18px 16px;text-align:center;font-family:Consolas,monospace;font-size:30px;letter-spacing:6px;color:#262723">{digits}</div>
@@ -37,7 +38,7 @@ def verification_email_html(code: str) -> str:
 </html>"""
 
 
-def send_verification_email(email: str, code: str) -> None:
+def send_verification_email(email: str, code: str, purpose: str = "register") -> None:
     if current_app.testing:
         return
     api_key = current_app.config.get("RESEND_API_KEY", "")
@@ -46,9 +47,9 @@ def send_verification_email(email: str, code: str) -> None:
     payload = {
         "from": current_app.config["RESEND_FROM"],
         "to": [email],
-        "subject": "UESTC AI 邮箱验证码",
-        "text": f"你的 UESTC AI 注册验证码是：{code}\n\n验证码在 10 分钟内有效。请勿向任何人提供验证码。",
-        "html": verification_email_html(code),
+        "subject": "UESTC AI 密码找回验证码" if purpose == "reset" else "UESTC AI 邮箱验证码",
+        "text": f"你的 UESTC AI {'密码找回' if purpose == 'reset' else '注册'}验证码是：{code}\n\n验证码在 10 分钟内有效。请勿向任何人提供验证码。",
+        "html": verification_email_html(code, purpose),
     }
     request = Request(
         "https://api.resend.com/emails",

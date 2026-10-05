@@ -113,11 +113,11 @@
 
 /* Archive pages keep the homepage's open, scannable rows. */
 .public-shell :is(.competition-list, .article-archive, .work-archive-list, .problem-directory.standalone, .leaderboard-table) { border-color: var(--line-dark); }
-.public-shell :is(.competition-row, .article-archive > a, .work-archive-list > a, .problem-directory.standalone > a, .leaderboard-row) {
+.public-shell :is(.competition-row, .article-archive-entry > a, .work-archive-entry > a, .problem-directory.standalone > a, .leaderboard-row) {
   border-color: var(--line);
   transition: background-color 180ms ease, padding-left 180ms ease;
 }
-.public-shell :is(.competition-row, .article-archive > a, .work-archive-list > a, .problem-directory.standalone > a):is(:hover, :focus-visible) {
+.public-shell :is(.competition-row, .article-archive-entry > a, .work-archive-entry > a, .problem-directory.standalone > a):is(:hover, :focus-visible) {
   background: #edf2e9;
   padding-left: 14px;
 }
@@ -187,6 +187,11 @@
 }
 .public-shell .about-page .about-statement { font-family: var(--display-font); letter-spacing: 0; }
 .public-shell .about-page .about-copy p { color: var(--muted); }
+
+.account-password-form { display: grid; gap: 20px; max-width: 560px; }
+.account-password-form h2 { margin: 0 0 8px; font-size: 24px; }
+.account-password-form header p { margin: 0; color: var(--muted); }
+.account-password-form .primary-button { justify-self: start; }
 
 /* The working screens share the public typography while retaining their dense layout. */
 .workspace-shell .page-title-band { min-height: 134px; }
@@ -432,7 +437,7 @@
   .workspace-shell .page-title-band h1,
   .public-detail-shell .page-title-band h1 { font-size: clamp(29px, 8vw, 38px); }
   .public-shell:not(:has(.home-updates)) .page-intro { align-items: stretch; }
-  .public-shell :is(.competition-row, .article-archive > a, .work-archive-list > a, .problem-directory.standalone > a):is(:hover, :focus-visible) { padding-left: 4px; }
+  .public-shell :is(.competition-row, .article-archive-entry > a, .work-archive-entry > a, .problem-directory.standalone > a):is(:hover, :focus-visible) { padding-left: 4px; }
   .public-shell .about-page { padding: 28px 0; }
   .public-shell :is(.competition-main h2, .article-archive h2) { font-size: 23px; }
   .public-shell :is(.work-archive-copy h2, .problem-heading h3, .track-directory h3) { font-size: 21px; }
@@ -619,4 +624,37 @@
     line-height: 1.4;
   }
   .public-shell:has(.home-updates) .problem-line div > span { font-size: 13px; }
+}
+.user-link { color: var(--accent, #42694b); text-underline-offset: 3px; }
+.user-link:hover { text-decoration: underline; }
+.archive-author { margin: 0; padding: 0 3px 16px; font-size: 14px; }
+.article-archive-entry, .work-archive-entry { border-bottom: 1px solid var(--line, #d9e0d4); }
+.article-archive-entry > a, .work-archive-entry > a { border-bottom: none; }
+.email-code-fields { display: grid; gap: 14px; min-width: 0; }
+.captcha-row { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 12px; align-items: end; }
+.captcha-image { display: grid; place-items: center; height: 56px; padding: 0; border: 1px solid var(--border, #d9e0d4); background: #f4f6ef; color: #345b40; cursor: pointer; }
+.captcha-image img { display: block; width: 100%; height: auto; }
+.email-code-fields .verification-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; }
+.profile-page { display: grid; gap: 40px; }
+.profile-summary { display: flex; align-items: center; gap: 24px; border-bottom: 1px solid var(--border, #d9e0d4); padding-bottom: 28px; }
+.profile-summary h2, .profile-summary p { margin: 0 0 8px; }
+.profile-avatar { display: grid; place-items: center; flex-shrink: 0; width: 76px; height: 76px; background: #294333; color: #fff; font-size: 32px; }
+.profile-section { margin-top: 28px; }
+.profile-section h2 { font-size: 28px; }
+.profile-list { display: grid; gap: 12px; }
+.profile-list > a, .profile-list > article { padding: 20px; border: 1px solid var(--border, #d9e0d4); min-width: 0; overflow-wrap: anywhere; }
+.profile-list a { display: grid; gap: 8px; }
+.profile-list span { color: var(--muted, #687a6c); }
+.contribution-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 32px; align-items: start; }
+.contribution-form { display: grid; gap: 20px; min-width: 0; }
+.contribution-form h2 { margin: 0; }
+.contribution-list { display: grid; gap: 16px; margin-top: 24px; }
+.contribution-list button { display: grid; gap: 8px; width: 100%; text-align: left; padding: 12px; background: transparent; border: 1px solid var(--border, #d9e0d4); overflow-wrap: anywhere; cursor: pointer; }
+@media (max-width: 900px) { .contribution-layout { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 560px) {
+  .captcha-row { grid-template-columns: minmax(0, 1fr); }
+  .captcha-image { width: 180px; }
+  .email-code-fields .verification-control { grid-template-columns: minmax(0, 1fr); }
+  .profile-summary { align-items: start; gap: 16px; }
+  .profile-avatar { width: 52px; height: 52px; font-size: 24px; }
 }

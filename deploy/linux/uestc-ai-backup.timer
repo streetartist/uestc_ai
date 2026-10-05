@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily UESTC AI backup
+
+[Timer]
+OnCalendar=*-*-* 03:20:00 Asia/Shanghai
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

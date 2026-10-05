@@ -58,7 +58,7 @@ export default function Home() {
       ]);
       if (detailResult.status === "fulfilled") setCompetition(detailResult.value);
       else setError(formatApiError(detailResult.reason));
-      if (contentResult.status === "fulfilled") setArticles(contentResult.value.slice(0, homeUpdatesLimit));
+      if (contentResult.status === "fulfilled") setArticles(contentResult.value.filter((item) => item.kind !== "work").slice(0, homeUpdatesLimit));
       else setArticleError(formatApiError(contentResult.reason));
     } catch (requestError) {
       setError(formatApiError(requestError));
@@ -165,13 +165,13 @@ export default function Home() {
       <div className="home-sections" id="discover">
         {loading ? <PageLoading label="正在读取赛事" /> : error ? (
           <RevealSection className="home-section flagship-section">
-            <header className="section-header"><div><span className="eyebrow"><i />FLAGSHIP</span><h2>旗舰系列</h2></div></header>
+            <header className="section-header"><div><span className="eyebrow"><i />TRACKS</span><h2>赛事赛道</h2></div></header>
             <PageError message={error} retry={load} />
           </RevealSection>
         ) : competition ? (
           <RevealSection className="home-section flagship-section">
             <header className="section-header">
-              <div><span className="eyebrow"><i />FLAGSHIP</span><h2>旗舰系列</h2><span className="mobile-swipe-hint" aria-hidden="true">左右滑动查看赛道 <ArrowRight size={14} /></span></div>
+              <div><span className="eyebrow"><i />TRACKS</span><h2>赛事赛道</h2><span className="mobile-swipe-hint" aria-hidden="true">左右滑动查看赛道 <ArrowRight size={14} /></span></div>
               <Link href={`/competitions/${competition.slug}`}>完整赛事说明 <ArrowRight size={15} /></Link>
             </header>
             <div className="track-grid">

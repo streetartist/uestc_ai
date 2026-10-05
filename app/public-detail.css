@@ -156,7 +156,9 @@
 }
 .public-detail-shell .rule-band p { color: #d2ded0; font-size: 13px; line-height: 1.7; }
 
-.public-detail-shell .problem-layout { gap: clamp(30px, 4vw, 55px); grid-template-columns: minmax(0, 1fr) 300px; }
+.public-detail-shell .problem-layout { align-items: start; gap: clamp(30px, 4vw, 55px); grid-template-columns: minmax(0, 1fr) 300px; max-width: 1320px; margin-inline: auto; }
+.public-detail-shell .problem-content { min-width: 0; }
+.public-detail-shell .problem-content > .markdown-body { width: 100%; max-width: none; }
 .public-detail-shell .problem-summary {
   padding: 25px 28px;
   border: 1px solid #dde8da;
@@ -179,6 +181,7 @@
 .public-detail-shell .requirement-list small { color: var(--detail-muted); }
 
 .public-detail-shell .markdown-body { max-width: 76ch; color: #415247; }
+.public-detail-shell .competition-rules .markdown-body { width: 100%; max-width: 960px; margin-inline: auto; }
 .public-detail-shell .markdown-body h1,
 .public-detail-shell .markdown-body h2,
 .public-detail-shell .markdown-body h3 { color: var(--detail-ink); }

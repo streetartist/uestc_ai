@@ -1,0 +1,14 @@
+[Unit]
+Description=UESTC AI evaluation network isolation
+After=docker.service
+Requires=docker.service
+Before=nginx.service uestc-ai-evaluation.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/uestc-worker/app/deploy/linux/evaluation_network.py
+RemainAfterExit=true
+
+[Install]
+WantedBy=multi-user.target

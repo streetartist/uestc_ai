@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, FilePlus2, Plus, Save, Trash2 } from "lucide-react";
 import { AppShell } from "@/app/components/AppShell";
 import { ConfirmDialog } from "@/app/components/ConfirmDialog";
+import { MarkdownEditor } from "@/app/components/MarkdownEditor";
 import { useSession } from "@/app/components/SessionProvider";
 import { useToast } from "@/app/components/ToastProvider";
 import { EmptyState, FieldError, PageError, PageLoading, StatusPill } from "@/app/components/ui";
@@ -31,6 +32,7 @@ function CompetitionEditor({ competition, reload, onDeleted }: {
   const [name, setName] = useState(competition.name);
   const [slug, setSlug] = useState(competition.slug);
   const [summary, setSummary] = useState(competition.summary);
+  const [overview, setOverview] = useState(competition.config.overview_md ?? "");
   const [status, setStatus] = useState(competition.status);
   const [registrationOpens, setRegistrationOpens] = useState(localDate(competition.registration_opens_at));
   const [registrationCloses, setRegistrationCloses] = useState(localDate(competition.registration_closes_at));
@@ -64,6 +66,7 @@ function CompetitionEditor({ competition, reload, onDeleted }: {
           ends_at: isoDate(ends),
           config: {
             ...competition.config,
+            overview_md: overview,
             team_size: { min: teamMin, max: teamMax },
             submission_limit: submissionLimit,
           },
@@ -109,6 +112,7 @@ function CompetitionEditor({ competition, reload, onDeleted }: {
         <label className="form-field"><span>URL 标识</span><input value={slug} onChange={(event) => setSlug(event.target.value)} required /></label>
       </div>
       <label className="form-field"><span>赛事简介</span><textarea value={summary} onChange={(event) => setSummary(event.target.value)} rows={3} required /></label>
+      <MarkdownEditor label="赛事介绍与细则" value={overview} onChange={setOverview} height={420} help="填写主承办单位、实施计划、评分规则、赛事流程与宣传安排；内容会显示在赛事详情页。" />
       <div className="form-grid four-fields">
         <label className="form-field"><span>报名开放</span><input type="datetime-local" value={registrationOpens} onChange={(event) => setRegistrationOpens(event.target.value)} /></label>
         <label className="form-field"><span>报名截止</span><input type="datetime-local" value={registrationCloses} onChange={(event) => setRegistrationCloses(event.target.value)} /></label>

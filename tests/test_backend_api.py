@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from platform_api import create_app  # noqa: E402
 from platform_api.extensions import db  # noqa: E402
-from platform_api.models import AuditLog, Competition, Content, User  # noqa: E402
+from platform_api.models import AuditLog, Competition, Content, Session, User  # noqa: E402
 from platform_api.seed import replace_demo_data  # noqa: E402
 
 
@@ -52,17 +52,23 @@ class PlatformApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_json())
         return response.get_json()
 
+    def code_request(self, client, email, **extra):
+        purpose = extra.get("purpose", "register")
+        challenge = client.post("/api/auth/captcha", json={"email": email, "purpose": purpose}).get_json()
+        return client.post("/api/auth/verification-codes", json={"email": email, "captcha_id": challenge["id"], "captcha_code": challenge["debug_code"], **extra})
+
     def register(self, client, email, name, password="secure-pass-123", invite_code=None):
         verification_payload = {"email": email}
         if invite_code:
             verification_payload["invite_code"] = invite_code
-        verification = client.post("/api/auth/verification-codes", json=verification_payload)
+        verification = PlatformApiTestCase.code_request(self, client, **verification_payload)
         self.assertEqual(verification.status_code, 202, verification.get_json())
         verification_code = verification.get_json()["debug_code"]
         register_payload = {
             "email": email,
             "name": name,
             "password": password,
+            "confirm_password": password,
             "verification_code": verification_code,
         }
         if invite_code:
@@ -155,10 +161,67 @@ class PlatformApiTestCase(unittest.TestCase):
             self.assertEqual(Content.query.count(), 3)
             self.assertEqual(AuditLog.query.count(), 0)
 
+    def test_password_change_rejects_invalid_input_without_revoking_sessions(self):
+        endpoint = "/api/auth/password"
+        valid = {"current_password": "ChangeMe123!", "new_password": "Updated-pass-456", "confirm_password": "Updated-pass-456"}
+        self.assertEqual(self.admin.post(endpoint, json=valid).status_code, 401)
+        self.login(self.admin, "admin@uestcai.top")
+        with self.app.app_context():
+            old_hash = User.query.filter_by(email="admin@uestcai.top").one().password_hash
+        for body, status in [
+            ([], 400), ({}, 400), ({**valid, "new_password": 12345}, 400),
+            ({**valid, "current_password": "wrong"}, 403),
+            ({**valid, "new_password": "short", "confirm_password": "short"}, 400),
+            ({**valid, "new_password": " " * 8, "confirm_password": " " * 8}, 400),
+            ({**valid, "new_password": "x" * 129, "confirm_password": "x" * 129}, 400),
+            ({**valid, "confirm_password": "another-password"}, 400),
+            ({"current_password": "ChangeMe123!", "new_password": "ChangeMe123!", "confirm_password": "ChangeMe123!"}, 400),
+        ]:
+            with self.subTest(body_fields=type(body).__name__, expected_status=status):
+                response = self.admin.post(endpoint, json=body)
+                self.assertEqual(response.status_code, status, response.get_json())
+                self.assertEqual(self.admin.get("/api/auth/me").status_code, 200)
+        with self.app.app_context():
+            self.assertEqual(User.query.filter_by(email="admin@uestcai.top").one().password_hash, old_hash)
+            self.assertEqual(AuditLog.query.filter_by(action="auth.password_changed").count(), 0)
+
+    def test_password_change_revokes_cookie_and_bearer_sessions_for_admin_and_member(self):
+        other = self.app.test_client()
+        self.login(other, "reviewer@uestc.ai")
+        for role in ("admin", "member"):
+            first, second = self.app.test_client(), self.app.test_client()
+            email = "admin@uestcai.top" if role == "admin" else "password-change@std.uestc.edu.cn"
+            old_password = "ChangeMe123!" if role == "admin" else "member-old-pass-123"
+            if role == "member":
+                self.register(first, email, "改密测试", password=old_password)
+            primary = self.login(first, email, old_password)
+            secondary = self.login(second, email, old_password)
+            response = first.post("/api/auth/password", json={
+                "current_password": old_password, "new_password": "Updated-pass-456", "confirm_password": "Updated-pass-456",
+                "user_id": self.login(other, "reviewer@uestc.ai")["user"]["id"],
+            })
+            self.assertEqual(response.status_code, 200, response.get_json())
+            self.assertEqual(response.get_json(), {"status": "password_changed"})
+            self.assertIn("Max-Age=0", response.headers["Set-Cookie"])
+            self.assertEqual(first.get("/api/auth/me").status_code, 401)
+            self.assertEqual(second.get("/api/auth/me").status_code, 401)
+            for token in (primary["token"], secondary["token"]):
+                self.assertEqual(self.app.test_client().get("/api/auth/me", headers={"Authorization": "Bearer " + token}).status_code, 401)
+            self.assertEqual(other.get("/api/auth/me").status_code, 200)
+            self.assertEqual(first.post("/api/auth/login", json={"email": email, "password": old_password}).status_code, 401)
+            self.assertEqual(self.login(first, email, "Updated-pass-456")["user"]["role"], role)
+            with self.app.app_context():
+                user = User.query.filter_by(email=email).one()
+                self.assertEqual(Session.query.filter_by(user_id=user.id).count(), 1)
+                log = AuditLog.query.filter_by(action="auth.password_changed", actor_id=user.id).one()
+                self.assertEqual(log.entity_id, user.id)
+                self.assertEqual(log.details, {})
+                self.assertNotIn("Updated-pass-456", user.password_hash)
+
     def test_email_verification_and_external_registration_invites(self):
         campus_client = self.app.test_client()
         campus_email = "verified-student@std.uestc.edu.cn"
-        verification = campus_client.post("/api/auth/verification-codes", json={"email": campus_email})
+        verification = self.code_request(campus_client, campus_email)
         self.assertEqual(verification.status_code, 202, verification.get_json())
         verification_code = verification.get_json()["debug_code"]
 
@@ -166,6 +229,7 @@ class PlatformApiTestCase(unittest.TestCase):
             "email": campus_email,
             "name": "邮箱验证同学",
             "password": "secure-pass-123",
+            "confirm_password": "secure-pass-123",
             "verification_code": "000000" if verification_code != "000000" else "111111",
         })
         self.assertEqual(invalid.status_code, 400, invalid.get_json())
@@ -173,6 +237,7 @@ class PlatformApiTestCase(unittest.TestCase):
             "email": campus_email,
             "name": "邮箱验证同学",
             "password": "secure-pass-123",
+            "confirm_password": "secure-pass-123",
             "verification_code": verification_code,
         })
         self.assertEqual(registered.status_code, 201, registered.get_json())
@@ -180,8 +245,8 @@ class PlatformApiTestCase(unittest.TestCase):
 
         rate_client = self.app.test_client()
         rate_email = "rate-limit@std.uestc.edu.cn"
-        first = rate_client.post("/api/auth/verification-codes", json={"email": rate_email})
-        second = rate_client.post("/api/auth/verification-codes", json={"email": rate_email})
+        first = self.code_request(rate_client, rate_email)
+        second = self.code_request(rate_client, rate_email)
         self.assertEqual(first.status_code, 202, first.get_json())
         self.assertEqual(second.status_code, 429, second.get_json())
         self.assertGreaterEqual(second.get_json()["retry_after"], 1)

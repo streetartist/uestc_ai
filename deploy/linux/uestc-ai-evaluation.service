@@ -1,0 +1,28 @@
+[Unit]
+Description=UESTC AI dedicated Docker evaluation worker
+After=network-online.target docker.service nginx.service
+Wants=network-online.target
+Requires=docker.service nginx.service
+
+[Service]
+User=uestc-worker
+Group=uestc-worker
+SupplementaryGroups=docker
+WorkingDirectory=/opt/uestc-worker/app
+EnvironmentFile=/etc/uestc-worker/worker.env
+Environment=TMPDIR=/opt/uestc-worker/data/tmp
+ExecStart=/opt/uestc-worker/venv/bin/python -u backend/evaluation_worker.py
+Restart=always
+RestartSec=5
+TimeoutStopSec=40
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/uestc-worker/data
+# Bind mounts must be visible to the host Docker daemon.
+PrivateTmp=false
+KillMode=control-group
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target

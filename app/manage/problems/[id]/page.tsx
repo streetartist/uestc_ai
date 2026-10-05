@@ -17,7 +17,6 @@ import { api, formatApiError, jsonBody } from "@/app/lib/api";
 import type { Competition, EvaluationConfig, Problem, ProblemTemplate, SubmissionSchema, Track } from "@/app/lib/domain";
 import { validateForm } from "@/app/lib/formValidation";
 import { useApiResource } from "@/app/lib/useApiResource";
-import "@/app/api-platform/platform.css";
 
 function rubricText(problem?: Problem) {
   return Object.entries(problem?.judging_schema.rubric ?? {}).map(([name, weight]) => `${name}: ${weight}`).join("\n");

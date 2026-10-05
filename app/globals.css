@@ -494,8 +494,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 /* Publishing */
 .archive-intro { gap: 40px; }
 .article-archive { border-top: 1px solid var(--line); }
-.article-archive > a { align-items: center; border-bottom: 1px solid var(--line); display: grid; column-gap: 24px; grid-template-columns: 96px 116px minmax(0, 1fr) 20px; min-height: 145px; padding: 21px 3px; }
-.article-archive > a:hover { background: rgba(255, 255, 255, .36); }
+.article-archive-entry > a { align-items: center; border-bottom: 1px solid var(--line); display: grid; column-gap: 24px; grid-template-columns: 96px 116px minmax(0, 1fr) 20px; min-height: 145px; padding: 21px 3px; }
+.article-archive-entry > a:hover { background: rgba(255, 255, 255, .36); }
 .article-archive time, .article-kind { color: var(--quiet); font-size: 12px; }
 .article-kind { align-items: center; align-self: stretch; border-right: 1px solid var(--line); color: var(--coral); display: flex; padding-right: 24px; text-transform: uppercase; }
 .article-kind + div { min-width: 0; padding-left: 4px; }
@@ -556,8 +556,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .work-archive-toolbar .search-field { min-width: 0; }
 .work-archive-toolbar select { background: var(--surface); border: 1px solid var(--line-dark); color: var(--ink-2); height: 42px; padding: 8px 30px 8px 10px; width: 100%; }
 .work-archive-list { border-top: 1px solid var(--line-dark); }
-.work-archive-list > a { align-items: center; border-bottom: 1px solid var(--line); display: grid; gap: 18px; grid-template-columns: 42px minmax(240px, 1fr) 145px 95px 18px; min-height: 112px; padding: 17px 3px; }
-.work-archive-list > a:hover { background: rgba(255, 255, 255, .38); }
+.work-archive-entry > a { align-items: center; border-bottom: 1px solid var(--line); display: grid; gap: 18px; grid-template-columns: 42px minmax(240px, 1fr) 145px 95px 18px; min-height: 112px; padding: 17px 3px; }
+.work-archive-entry > a:hover { background: rgba(255, 255, 255, .38); }
 .work-archive-index { color: var(--coral); font-family: Georgia, serif; font-size: 22px; }
 .work-archive-copy { min-width: 0; }
 .work-archive-copy > span { color: var(--quiet); display: block; font-size: 12px; margin-bottom: 5px; }
@@ -903,7 +903,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .leaderboard-head { display: none; }
   .leaderboard-row { grid-template-columns: 45px minmax(0, 1fr) 75px 20px; padding: 12px 0; }
   .leaderboard-row > span:nth-of-type(1), .leaderboard-row > span:nth-of-type(2) { display: none; }
-  .work-archive-list > a { gap: 13px; grid-template-columns: 38px minmax(190px, 1fr) 130px 18px; }
+  .work-archive-entry > a { gap: 13px; grid-template-columns: 38px minmax(190px, 1fr) 130px 18px; }
   .work-archive-list time { display: none; }
   .article-layout { gap: 35px; grid-template-columns: 150px minmax(0, 1fr); }
   .editor-archive { border-left: 0; border-top: 1px solid var(--line); padding: 26px 0 0; position: static; }
@@ -954,10 +954,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .with-search { align-items: stretch; }
   .search-field { min-width: 0; }
   .work-archive-toolbar { grid-template-columns: 1fr; }
-  .work-archive-list > a { align-items: start; gap: 10px 12px; grid-template-columns: 30px minmax(0, 1fr) 17px; min-height: 0; padding: 18px 2px; }
+  .work-archive-entry > a { align-items: start; gap: 10px 12px; grid-template-columns: 30px minmax(0, 1fr) 17px; min-height: 0; padding: 18px 2px; }
   .work-archive-copy h2 { font-size: 19px; }
   .work-version-count { grid-column: 2; margin-top: 2px; }
-  .work-archive-list > a > svg { grid-column: 3; grid-row: 1; margin-top: 5px; }
+  .work-archive-entry > a > svg { grid-column: 3; grid-row: 1; margin-top: 5px; }
   .competition-row { gap: 13px; grid-template-columns: 35px minmax(0, 1fr) 17px; min-height: 150px; }
   .competition-index { font-size: 22px; }
   .competition-main h2 { font-size: 24px; }
@@ -991,7 +991,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .submission-list > div > a .status-pill { display: none; }
   .submit-mode { align-items: start; flex-direction: column; gap: 9px; }
   .form-gate { align-items: start; flex-wrap: wrap; }
-  .article-archive > a { gap: 10px; grid-template-columns: 50px minmax(0, 1fr) 17px; min-height: 125px; }
+  .article-archive-entry > a { gap: 10px; grid-template-columns: 50px minmax(0, 1fr) 17px; min-height: 125px; }
   .article-kind { display: none; }
   .article-archive h2 { font-size: 20px; }
   .article-layout { display: block; }

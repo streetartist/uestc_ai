@@ -17,7 +17,6 @@ import { AIQuotaEditor } from "@/app/components/AIQuotaEditor";
 import { ComputeProviders, ComputeQuotaCard, ComputeResources } from "./compute-panels";
 import type { ComputeOverview } from "@/app/lib/compute";
 import { computeCost, gpuHours } from "@/app/lib/compute";
-import "./platform.css";
 
 const tabs = [
   { id: "overview", label: "用量概览", icon: Activity }, { id: "models", label: "模型广场", icon: Layers },

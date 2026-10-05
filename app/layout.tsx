@@ -6,6 +6,8 @@ import "./theme.css";
 import "./reference-video-sections.css";
 import "./public-detail.css";
 import "./unified-ui.css";
+import "./community.css";
+import "./api-platform/platform.css";
 
 export const metadata: Metadata = {
   title: "UESTC AI 社 | 赛事与作品档案",

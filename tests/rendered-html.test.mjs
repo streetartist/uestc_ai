@@ -6,6 +6,9 @@ async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", String(process.pid) + "-" + String(Date.now()));
   const { default: worker } = await import(workerUrl.href);
+  if (typeof worker === "function") {
+    return worker(new Request("http://localhost/", { headers: { accept: "text/html" } }));
+  }
   return worker.fetch(
     new Request("http://localhost/", { headers: { accept: "text/html" } }),
     { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
@@ -73,7 +76,6 @@ test("mobile platform and flagship cards swipe one at a time", async () => {
   const mobile = css.split("/* One full card per swipe on phones;")[1];
   assert.ok(mobile);
   assert.match(page, /className="manifesto-cards"/);
-  assert.match(page, /左右滑动查看 3 个入口/);
   assert.match(page, /左右滑动查看赛道/);
   assert.match(css, /\.manifesto-cards \{ display: contents; \}/);
   assert.match(mobile, /scroll-snap-type: x mandatory/);
@@ -142,7 +144,7 @@ test("homepage follows the reference video sequence with kinetic type", async ()
 
   assert.doesNotMatch(page, /KineticTypeBackdrop/);
   assert.match(scrollFilm, /KineticTypeBackdrop/);
-  assert.match(page, /旗舰系列/);
+  assert.match(page, /赛事赛道/);
   assert.match(backdropCss, /kinetic-type-backdrop__mascot/);
   assert.match(component, /src="\/ai-mascot.webp"/);
   assert.match(particleCanvas, /<canvas/);
@@ -164,8 +166,8 @@ test("homepage follows the reference video sequence with kinetic type", async ()
   assert.match(scrollFilm, /requestAnimationFrame|scroll-film__window/);
   assert.doesNotMatch(scrollFilm, /hasSeenFilm|sessionStorage|localStorage/);
   assert.ok(page.indexOf('className="home-updates"') < page.indexOf('aria-label="产品矩阵"'));
-  assert.ok(page.indexOf('aria-label="产品矩阵"') < page.indexOf('旗舰系列'));
-  assert.ok(page.indexOf('旗舰系列') < page.indexOf('split-section'));
+  assert.ok(page.indexOf('aria-label="产品矩阵"') < page.indexOf('赛事赛道'));
+  assert.ok(page.indexOf('赛事赛道') < page.indexOf('split-section'));
   assert.match(sectionCss, /news-cards/);
   assert.match(sectionCss, /updates-fallback-feature/);
   assert.match(sectionCss, /manifesto-card/);

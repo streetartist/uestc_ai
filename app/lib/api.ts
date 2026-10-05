@@ -46,6 +46,16 @@ export function formatApiError(error: unknown): string {
   }
   if (error instanceof ApiError) {
     const translations: Record<string, string> = {
+      "numeric captcha expired": "数字验证码已失效，请获取新图片。",
+      "numeric captcha incorrect": "数字验证码不正确，请重新输入。",
+      "captcha requested too frequently": "获取数字验证码过于频繁，请稍后重试。",
+      "invalid captcha request": "验证码请求不正确，请重新获取。",
+      "registration fields must be strings": "请填写注册信息并确认密码。",
+      "invalid registration name": "姓名或昵称须为 1～80 个字符。",
+      "invalid contribution fields": "请填写标题和正文，标题最多 240 字、摘要最多 2000 字。",
+      "invalid contribution status": "投稿类型或状态不正确。",
+      "contribution attachment is unavailable": "附件不可用或不属于你，请重新上传。",
+      "user not found": "个人主页不存在。",
       "team has compute records": "队伍已有算力实例或使用记录，请保留队伍以便核对。",
       "track has compute records": "赛道已有算力实例或使用记录，请归档以保留记录。",
       "problem has compute records": "赛题已有算力实例或使用记录，请归档以保留记录。",
@@ -57,6 +67,11 @@ export function formatApiError(error: unknown): string {
       "email already registered": "该邮箱已经注册。",
       "invalid email address": "请输入有效的邮箱地址。",
       "invalid email or password": "邮箱或密码不正确。",
+      "current password is incorrect": "当前密码不正确。",
+      "new password must contain 8 to 128 characters": "新密码需为 8～128 个字符。",
+      "password confirmation does not match": "两次输入的新密码不一致。",
+      "new password must differ from current password": "新密码不能与当前密码相同。",
+      "password fields must be strings": "请完整填写当前密码和新密码。",
       "valid registration invite required": "该邮箱需要有效的注册邀请码。",
       "verification code expired": "验证码不存在或已过期，请重新发送。",
       "invalid verification code": "验证码不正确，请检查后重试。",

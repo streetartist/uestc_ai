@@ -315,6 +315,7 @@ class MarkdownAsset(db.Model):
     content_type = db.Column(db.String(120), nullable=False)
     size = db.Column(db.Integer, nullable=False)
     kind = db.Column(db.String(24), nullable=False)
+    visibility = db.Column(db.String(24), nullable=False, default="public", server_default="public")
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     uploader = db.relationship("User")
 
@@ -447,14 +448,17 @@ class Content(TimestampMixin, db.Model):
     excerpt = db.Column(db.Text, nullable=False, default="")
     body_md = db.Column(db.Text, nullable=False, default="")
     status = db.Column(db.String(24), nullable=False, default="draft", index=True)
+    review_note = db.Column(db.Text, nullable=False, default="", server_default="")
     author_id = db.Column(db.String(36), db.ForeignKey("users.id"))
     published_at = db.Column(db.DateTime(timezone=True), index=True)
     author = db.relationship("User")
 
     def to_dict(self, include_body=False):
-        data = {"id": self.id, "kind": self.kind, "slug": self.slug, "title": self.title, "excerpt": self.excerpt, "status": self.status, "author": self.author.name if self.author else None, "published_at": iso(self.published_at)}
+        data = {"id": self.id, "kind": self.kind, "slug": self.slug, "title": self.title, "excerpt": self.excerpt, "status": self.status, "author": self.author.name if self.author else None, "author_id": self.author_id, "published_at": iso(self.published_at)}
         if include_body:
             data["body_md"] = self.body_md
+            if self.status != "published":
+                data["review_note"] = self.review_note
         return data
 
 

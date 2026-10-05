@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowRight, CalendarDays, Users } from "lucide-react";
 import { AppShell } from "@/app/components/AppShell";
+import { Markdown } from "@/app/components/Markdown";
 import { PageError, PageLoading, StatusPill } from "@/app/components/ui";
 import type { Competition } from "@/app/lib/domain";
 import { formatBeijing } from "@/app/lib/time";
@@ -22,7 +23,7 @@ export default function CompetitionPage() {
       {loading ? <PageLoading /> : error || !data ? <PageError message={error || "赛事不存在。"} retry={reload} /> : (
         <>
           <section className="competition-overview">
-            <div><StatusPill tone="live">{data.status === "published" ? "正在进行" : data.status}</StatusPill><p>{data.summary}</p></div>
+            <div><StatusPill tone={data.status === "draft" ? "warm" : "live"}>{data.status === "published" ? "已发布" : data.status === "draft" ? "筹备草稿" : data.status}</StatusPill><p>{data.summary}</p></div>
             <dl className="date-grid">
               <div><dt>报名开放</dt><dd>{date(data.registration_opens_at)}</dd></div>
               <div><dt>报名截止</dt><dd>{date(data.registration_closes_at)}</dd></div>
@@ -43,6 +44,7 @@ export default function CompetitionPage() {
               ))}
             </div>
           </section>
+          {data.config.overview_md && <section className="content-section competition-rules" aria-label="赛事介绍与细则"><Markdown>{data.config.overview_md}</Markdown></section>}
           <section className="rule-band">
             <CalendarDays size={19} />
             <div><strong>通用参赛流程</strong><p>创建队伍 → 报名赛道 → 阅读题目 → 提交 README 与作品材料 → 按版本评审。</p></div>

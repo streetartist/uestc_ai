@@ -10,8 +10,7 @@ from flask_migrate import downgrade, upgrade
 from sqlalchemy import MetaData, Table, inspect, text
 from platform_api import create_app
 from platform_api.extensions import db
-from platform_api.models import Competition, Problem, Team, User
-from platform_api.seed import seed_database
+from platform_api.models import Competition, Problem, Team, Track, User
 
 
 class EvaluationLimitMigrationTests(unittest.TestCase):
@@ -24,7 +23,14 @@ class EvaluationLimitMigrationTests(unittest.TestCase):
             with app.app_context():
                 try:
                     upgrade(revision="a2c5e94d320b")
-                    seed_database()
+                    # Seed only the entities needed by this historical schema;
+                    # current editorial models have columns introduced later.
+                    user = User(email="migration@example.com", name="Migration", password_hash="unused", role="member")
+                    competition = Competition(slug="migration", name="Migration", summary="Fixture", status="published")
+                    track = Track(competition=competition, slug="track", name="Track")
+                    problem = Problem(track=track, code="M-001", slug="migration-problem", title="Migration problem")
+                    db.session.add_all([user, competition, track, problem])
+                    db.session.commit()
                     user = User.query.first()
                     competition = Competition.query.first()
                     problem = Problem.query.first()

@@ -13,7 +13,7 @@ from ..models import Competition, EvaluationRun, Problem, Registration, Review, 
 from ..evaluation import adapters, evaluation_budget
 from ..ai_quotas import lock_problem
 from ..submission_schema import validate_submission_materials
-from ..reviewing import combined_score, effective_reviewer_weights, external_weight_percent, is_review_locked, latest_external_score, review_score
+from ..reviewing import calculate_review_total, combined_score, effective_reviewer_weights, external_weight_percent, is_review_locked, latest_external_score, review_score
 from ..security import current_user, require_user, team_member
 from ..uploading import file_extension, original_filename, save_with_limit
 from ..utils import audit, payload
@@ -533,12 +533,16 @@ def save_review():
         evaluation = current_evaluation(version)
         if not evaluation or evaluation["status"] != "completed":
             return jsonify({"error": "evaluation must complete before review"}), 409
+    try:
+        total_score = calculate_review_total(version.submission.problem, data["scores"], data.get("total_score"))
+    except (TypeError, ValueError) as error:
+        return jsonify({"error": str(error)}), 400
     review = Review.query.filter_by(submission_version_id=version.id, reviewer_id=user.id).first()
     if not review:
         review = Review(submission_version_id=version.id, reviewer_id=user.id)
         db.session.add(review)
     review.scores = data["scores"]
-    review.total_score = data.get("total_score", sum(float(value) for value in data["scores"].values()))
+    review.total_score = total_score
     review.feedback_md = data.get("feedback_md", "")
     review.status = data.get("status", "submitted")
     db.session.flush()
@@ -719,6 +723,11 @@ def import_scores_csv():
 @submissions_bp.get("/leaderboards/<competition_slug>")
 def leaderboard(competition_slug: str):
     competition = Competition.query.filter_by(slug=competition_slug).first_or_404()
+    user = current_user()
+    if competition.status != "published" and not (user and user.role in {"admin", "organizer"}):
+        return jsonify({"error": "competition not found"}), 404
+    if (competition.config or {}).get("leaderboard", {}).get("visible") is False:
+        return jsonify([])
     if competition.ends_at:
         end_at = competition.ends_at
         if end_at.tzinfo is None:
@@ -762,11 +771,14 @@ def leaderboard(competition_slug: str):
             "batch": external.batch.label if external else "online-review",
             "version": version.version,
             "team": version.submission.team.name,
+            "team_members": [{"id": member.user.id, "name": member.user.name} for member in version.submission.team.members],
             "work": version.submission.title,
             "problem": version.submission.problem.code,
             "track": version.submission.problem.track.name,
         })
     result.sort(key=lambda row: row["total_score"] if row["total_score"] is not None else float("-inf"), reverse=True)
+    track_ranks = {}
     for index, row in enumerate(result, 1):
-        row["rank"] = index
+        track_ranks[row["track"]] = track_ranks.get(row["track"], 0) + 1
+        row["rank"] = track_ranks[row["track"]] if (competition.config or {}).get("leaderboard", {}).get("rank_scope") == "track" else index
     return jsonify(result)

@@ -24,7 +24,7 @@ Web API 负责业务数据和材料流转；可选的独立工作进程通过受
 | 后端 | Flask 3、SQLAlchemy 2、Flask-Migrate |
 | 数据库 | 本地 SQLite；生产环境 PostgreSQL |
 | 内容 | `@uiw/react-md-editor`、`react-markdown`、GFM、HTML 白名单清洗 |
-| 部署 | Cloudflare Worker 兼容的前端构建；Flask API 独立部署 |
+| 部署 | Cloudflare Worker 或 Node 前端；Flask API、PostgreSQL、Redis 可独立部署 |
 
 默认演示数据是完全虚构的“纸城创作节”，仅用于展示流程，不对应真实赛事、赛题或活动。前后端没有把赛道名称写死在业务逻辑中，后续可配置其他赛道、提交字段和评分 rubric。
 
@@ -133,7 +133,7 @@ worker/                      Cloudflare Worker 入口
 .openai/hosting.json         Sites 前端托管配置
 ```
 
-前端部署不会自动部署 Flask API。构建前应通过 `NEXT_PUBLIC_API_URL` 指向单独部署的后端，并按 [安全策略](SECURITY.md#部署基线) 配置数据库、跨域、Cookie、邮件和上传存储。
+前端部署不会自动部署 Flask API。常规 Linux 服务器可使用 [Node / PostgreSQL / Redis 部署说明](deploy/linux/README.md)，由 Nginx 同域转发 `/api`。前后端分开部署时，通过 `NEXT_PUBLIC_API_URL` 指向后端，并按 [安全策略](SECURITY.md#部署基线) 配置数据库、跨域、Cookie、邮件和上传存储。
 
 ## 参与贡献
 

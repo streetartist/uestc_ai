@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 
 from flask import Blueprint, jsonify, request
 
 from ..extensions import db
-from ..models import Content
+from ..models import Content, MarkdownAsset, new_id
 from ..security import current_user, require_user
 from ..utils import audit, payload
 
@@ -28,7 +29,7 @@ def list_content():
 def content_detail(slug: str):
     item = Content.query.filter_by(slug=slug).first_or_404()
     user = current_user()
-    if item.status != "published" and (not user or user.role not in {"admin", "organizer", "editor"}):
+    if item.status != "published" and (not user or (user.id != item.author_id and user.role not in {"admin", "organizer", "editor"})):
         return jsonify({"error": "content not found"}), 404
     return jsonify(item.to_dict(include_body=True))
 
@@ -53,15 +54,19 @@ def create_content():
 @content_bp.patch("/content/<content_id>")
 @require_user("admin", "organizer", "editor")
 def update_content(content_id: str):
-    item = db.session.get(Content, content_id)
+    item = db.session.get(Content, content_id, with_for_update=True)
     if not item:
         return jsonify({"error": "content not found"}), 404
     data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict) or any(not isinstance(value, str) for key, value in data.items() if key in {"kind", "slug", "title", "excerpt", "body_md", "status", "review_note"}):
+        return jsonify({"error": "invalid contribution fields"}), 400
+    if "status" in data and data["status"] not in {"draft", "pending", "published", "rejected"}:
+        return jsonify({"error": "invalid contribution status"}), 400
     if "slug" in data:
         duplicate = Content.query.filter(Content.slug == data["slug"], Content.id != item.id).first()
         if duplicate:
             return jsonify({"error": "content slug already exists"}), 409
-    for field in ("kind", "slug", "title", "excerpt", "body_md", "status"):
+    for field in ("kind", "slug", "title", "excerpt", "body_md", "status", "review_note"):
         if field in data:
             setattr(item, field, data[field])
     if item.status == "published" and not item.published_at:
@@ -81,3 +86,58 @@ def delete_content(content_id: str):
     db.session.delete(item)
     db.session.commit()
     return "", 204
+
+
+@content_bp.get("/me/contributions")
+@require_user()
+def my_contributions():
+    return jsonify([item.to_dict(include_body=True) for item in Content.query.filter_by(author_id=current_user().id).filter(Content.kind.in_(("blog", "work"))).order_by(Content.updated_at.desc()).all()])
+
+
+def contribution_data():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or any(not isinstance(data.get(key, ""), str) for key in ("kind", "title", "excerpt", "body_md", "status")):
+        return None, (jsonify({"error": "invalid contribution fields"}), 400)
+    if data.get("kind") not in {"blog", "work"} or data.get("status", "draft") not in {"draft", "pending"}:
+        return None, (jsonify({"error": "invalid contribution status"}), 400)
+    if not data.get("title", "").strip() or len(data["title"].strip()) > 240 or not data.get("body_md", "").strip() or len(data["body_md"]) > 200_000 or len(data.get("excerpt", "")) > 2000:
+        return None, (jsonify({"error": "invalid contribution fields"}), 400)
+    for asset_id in set(re.findall(r"/api/markdown-assets/([0-9a-f-]{36})", data["body_md"])):
+        asset = db.session.get(MarkdownAsset, asset_id)
+        if not asset or (asset.visibility == "private" and asset.uploaded_by != current_user().id):
+            return None, (jsonify({"error": "contribution attachment is unavailable"}), 403)
+    return data, None
+
+
+@content_bp.post("/me/contributions")
+@require_user()
+def create_contribution():
+    data, error = contribution_data()
+    if error:
+        return error
+    item = Content(kind=data["kind"], slug="community-" + new_id(), title=data["title"].strip(), excerpt=data.get("excerpt", ""), body_md=data["body_md"], status=data.get("status", "draft"), author_id=current_user().id)
+    db.session.add(item)
+    db.session.flush()
+    audit("contribution.created", "content", item.id)
+    db.session.commit()
+    return jsonify(item.to_dict(include_body=True)), 201
+
+
+@content_bp.patch("/me/contributions/<content_id>")
+@require_user()
+def update_contribution(content_id):
+    item = db.session.get(Content, content_id, with_for_update=True)
+    if not item or item.author_id != current_user().id or item.kind not in {"blog", "work"}:
+        return jsonify({"error": "content not found"}), 404
+    data, error = contribution_data()
+    if error:
+        return error
+    # Any author revision goes through review again, including previously published work.
+    for field in ("kind", "title", "excerpt", "body_md"):
+        setattr(item, field, data.get(field, ""))
+    item.status = data.get("status", "draft")
+    item.published_at = None
+    item.review_note = ""
+    audit("contribution.updated", "content", item.id)
+    db.session.commit()
+    return jsonify(item.to_dict(include_body=True))

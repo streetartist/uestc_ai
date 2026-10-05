@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from .extensions import db
 from .models import Competition, CompetitionReviewer, Problem, Review, Score, ScoreBatch, SubmissionVersion
 
@@ -46,7 +48,23 @@ def validate_scoring_config(value) -> dict:
     if weight < 0 or weight > 100:
         raise ValueError("external weight must be between 0 and 100 percent")
     config["external_weight_percent"] = weight
+    if config.get("review_score_mode", "sum") not in {"sum", "weighted"}:
+        raise ValueError("invalid review score mode")
     return config
+
+
+def calculate_review_total(problem: Problem, scores: dict, submitted_total=None) -> float:
+    # Existing competitions accept points per criterion; opt in to 0–100 weighted criteria.
+    if (problem.scoring_config or {}).get("review_score_mode") != "weighted":
+        return submitted_total if submitted_total is not None else sum(float(value) for value in scores.values())
+    rubric = (problem.judging_schema or {}).get("rubric", {})
+    if not rubric or set(scores) != set(rubric):
+        raise ValueError("请为每个评分项填写百分制分数。")
+    if any(type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 100 for value in scores.values()):
+        raise ValueError("每项分数须在0—100之间。")
+    if any(type(weight) not in (int, float) or not math.isfinite(weight) or weight < 0 for weight in rubric.values()) or not math.isclose(sum(rubric.values()), 1):
+        raise ValueError("评分权重须合计100%。")
+    return sum(scores[key] * weight for key, weight in rubric.items())
 
 
 def external_weight_percent(problem: Problem) -> float:

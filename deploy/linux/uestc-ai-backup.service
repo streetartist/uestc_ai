@@ -1,0 +1,9 @@
+[Unit]
+Description=UESTC AI database and upload backup
+After=postgresql.service
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/bin/python3 /opt/uestc-ai/current/deploy/linux/backup.py
+Nice=10

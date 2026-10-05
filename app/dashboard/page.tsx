@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { UserLinks } from "@/app/components/UserLink";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRight, ClipboardCheck, Copy, LogIn, Plus, TicketCheck, Trash2, Users } from "lucide-react";
 import { AppShell } from "@/app/components/AppShell";
@@ -103,12 +104,13 @@ export default function DashboardPage() {
 
   return (
     <AppShell title={`${user.name}的工作台`} eyebrow="DASHBOARD" actions={<Link className="primary-button compact-button" href="/problems"><Plus size={15} />选择题目</Link>}>
+      <div className="page-intro"><p>管理队伍、报名与作品。</p><Link className="outline-button" href={`/people/${user.id}`}>个人主页 · 修改密码 <ArrowRight size={15} /></Link></div>
       {loading ? <PageLoading /> : <>
         {error && <div className="inline-alert error">{error}</div>}
         <section className="dashboard-section">
           <header className="section-header"><div><span className="eyebrow"><i />TEAMS</span><h2>我的队伍</h2></div><span className="section-note">邀请码用于邀请成员，不要公开发布</span></header>
           {teams.length ? <div className="team-list">{teams.map((team) => <div className="team-row" key={team.id}>
-            <div className="team-symbol"><Users size={18} /></div><div className="team-main"><strong>{team.name}</strong><span>{team.members?.map((member) => member.name).join("、")}</span></div>
+            <div className="team-symbol"><Users size={18} /></div><div className="team-main"><strong>{team.name}</strong><span><UserLinks users={team.members ?? []} /></span></div>
             <button type="button" className="invite-code" title="复制邀请码" onClick={() => void copyInviteCode(team.invite_code)}><Copy size={13} />{team.invite_code}</button>
             <div className="team-registrations">{(registrationsByTeam[team.id] ?? []).map((registration) => <span className="registration-chip" key={registration.id}><StatusPill tone="live">{registration.track_name}</StatusPill><button type="button" title={`取消 ${registration.track_name} 报名`} aria-label={`取消 ${registration.track_name} 报名`} onClick={() => setDeleteTarget({ kind: "registration", id: registration.id, title: `${team.name} / ${registration.track_name}` })}><Trash2 size={12} /></button></span>)}{!registrationsByTeam[team.id]?.length && <StatusPill tone="muted">尚未报名</StatusPill>}</div>
             {team.captain_id === user.id ? <button type="button" className="icon-button team-delete" title="删除队伍" aria-label={`删除队伍 ${team.name}`} onClick={() => setDeleteTarget({ kind: "team", id: team.id, title: team.name })}><Trash2 size={15} /></button> : <span />}

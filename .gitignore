@@ -63,6 +63,7 @@ __pycache__/
 *.sqlite
 *.sqlite3
 /.venv/
+/.playwright-cli/
 /venv/
 /.npm-cache/
 /.pnpm-store/

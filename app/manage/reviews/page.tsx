@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { UserLink } from "@/app/components/UserLink";
 import { useMemo, useState } from "react";
 import { ArrowRight, Check, CircleGauge, LockKeyhole, Save, Scale, UnlockKeyhole } from "lucide-react";
 import { AppShell } from "@/app/components/AppShell";
@@ -106,7 +107,7 @@ function WeightEditor({ data, reload }: { data: ReviewerWeightConfiguration; rel
           const effective = isSelected ? rawWeight ? Number(rawWeight) : automaticWeight : null;
           return <div className={isSelected ? "selected" : ""} key={reviewer.id}>
             <label className="reviewer-check"><input type="checkbox" disabled={data.locked} checked={isSelected} onChange={() => toggleReviewer(reviewer.id)} /><span><Check size={13} /></span></label>
-            <div className="reviewer-identity"><span className="account-avatar">{reviewer.name.slice(0, 1)}</span><span><strong>{reviewer.name}</strong><small>{reviewer.email} · {roleLabels[reviewer.role]}</small></span></div>
+            <div className="reviewer-identity"><span className="account-avatar">{reviewer.name.slice(0, 1)}</span><span><strong><UserLink id={reviewer.id} name={reviewer.name} /></strong><small>{reviewer.email} · {roleLabels[reviewer.role]}</small></span></div>
             <label className="weight-input"><input type="number" min="0.01" max="100" step="0.01" disabled={!isSelected || data.locked} value={weights[reviewer.id] ?? ""} onChange={(event) => { setFormError(""); setWeights((current) => ({ ...current, [reviewer.id]: event.target.value })); }} placeholder="自动" /><span>%</span></label>
             <span className={`effective-weight ${rawWeight ? "manual" : "automatic"}`}>{isSelected && effective != null && Number.isFinite(effective) ? <><strong>{percent(effective)}</strong><small>{rawWeight ? "手动" : "自动"}</small></> : "-"}</span>
           </div>;

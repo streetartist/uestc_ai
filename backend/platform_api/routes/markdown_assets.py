@@ -5,7 +5,7 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request, send_from_directory
 from ..extensions import db
-from ..models import MarkdownAsset, new_id
+from ..models import Content, MarkdownAsset, new_id
 from ..security import current_user, require_user
 from ..uploading import file_extension, original_filename, save_with_limit
 from ..utils import audit
@@ -65,6 +65,7 @@ def upload_markdown_asset():
         content_type=content_type,
         size=size,
         kind="image" if extension in IMAGE_EXTENSIONS else "file",
+        visibility="private" if request.form.get("scope") == "contribution" else "public",
     )
     db.session.add(asset)
     db.session.flush()
@@ -78,6 +79,14 @@ def serve_markdown_asset(asset_id: str):
     asset = db.session.get(MarkdownAsset, asset_id)
     if not asset:
         return jsonify({"error": "markdown asset not found"}), 404
+    if asset.visibility == "private":
+        user = current_user()
+        allowed = user and (user.id == asset.uploaded_by or user.role in {"admin", "organizer", "editor"})
+        if not allowed:
+            # Exact asset UUIDs may only be disclosed by a published contribution.
+            allowed = Content.query.filter(Content.status == "published", Content.body_md.contains(f"/api/markdown-assets/{asset.id}")).first() is not None
+        if not allowed:
+            return jsonify({"error": "markdown asset not found"}), 404
     response = send_from_directory(
         current_app.config["UPLOAD_FOLDER"],
         asset.storage_name,
@@ -87,4 +96,6 @@ def serve_markdown_asset(asset_id: str):
         max_age=86400,
     )
     response.headers["X-Content-Type-Options"] = "nosniff"
+    if asset.visibility == "private":
+        response.headers["Cache-Control"] = "private, no-store"
     return response

@@ -34,7 +34,7 @@ export type Problem = {
   source_url?: string | null;
   submission_schema: SubmissionSchema;
   judging_schema: { rubric?: Record<string, number> };
-  scoring_config: { external_weight_percent?: number };
+  scoring_config: { external_weight_percent?: number; review_score_mode?: "sum" | "weighted"; external_score_label?: string; online_score_label?: string };
   evaluation_config: EvaluationConfig;
 };
 
@@ -131,9 +131,10 @@ export type Competition = {
   starts_at?: string | null;
   ends_at?: string | null;
   config: {
+    overview_md?: string;
     team_size?: { min: number; max: number };
     submission_limit?: number;
-    leaderboard?: { visible: boolean };
+    leaderboard?: { visible: boolean; rank_scope?: "track" };
   };
   tracks?: Track[];
 };
@@ -229,6 +230,8 @@ export type ContentItem = {
   body_md?: string;
   status: string;
   author: string | null;
+  author_id?: string | null;
+  review_note?: string;
   published_at: string | null;
 };
 
@@ -241,6 +244,7 @@ export type LeaderboardRow = {
   submission_id: string;
   version: number;
   team: string;
+  team_members?: { id: string; name: string }[];
   work: string;
   problem: string;
   track: string;

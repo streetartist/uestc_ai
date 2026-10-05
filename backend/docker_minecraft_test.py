@@ -123,8 +123,9 @@ def main():
             assert problem["status"] == "draft"
             checked(admin.patch(f"/api/manage/problems/{problem['id']}", json={"status": "published"}))
         email = "mc-acceptance@std.uestc.edu.cn"
-        code = checked(member.post("/api/auth/verification-codes", json={"email": email}), 202)["debug_code"]
-        checked(member.post("/api/auth/register", json={"email": email, "name": "MC 验收", "password": "Acceptance123!", "verification_code": code}), 201)
+        challenge = checked(member.post("/api/auth/captcha", json={"email": email}), 200)
+        code = checked(member.post("/api/auth/verification-codes", json={"email": email, "captcha_id": challenge["id"], "captcha_code": challenge["debug_code"]}), 202)["debug_code"]
+        checked(member.post("/api/auth/register", json={"email": email, "name": "MC 验收", "password": "Acceptance123!", "confirm_password": "Acceptance123!", "verification_code": code}), 201)
         team = checked(member.post("/api/teams", json={"competition_id": competition["id"], "name": "MC Docker 验收"}), 201)
         checked(member.post("/api/registrations", json={"competition_id": competition["id"], "track_id": track["id"], "team_id": team["id"]}), 201)
         assets = []

@@ -12,6 +12,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -69,6 +70,20 @@ def remove_container(name: str):
         pass
 
 
+def cleanup_worker_containers(worker_id: str):
+    """Recover containers left by this worker after a crash or host restart."""
+    names = subprocess.check_output([
+        'docker', 'ps', '-aq', '--filter', 'label=uestc.worker_id=' + worker_id,
+    ], text=True, timeout=10).splitlines()
+    for name in names:
+        remove_container(name)
+
+
+def stop_worker(_signal, _frame):
+    # SystemExit unwinds execute()'s finally blocks and removes live containers.
+    raise SystemExit(0)
+
+
 def pinned_image(image: str) -> bool:
     # Local builds have an immutable image ID; deployed images use a repo digest.
     return bool(re.fullmatch(r"(?:[^\s]+@)?sha256:[a-f0-9]{64}", image))
@@ -94,9 +109,16 @@ def execute_isolated_agent(base: str, job: dict, trusted_image: str, agent_image
         root = Path(directory)
         inputs, output, ipc = root / "input", root / "output", root / "ipc"
         inputs.mkdir(mode=0o755)
-        output.mkdir(mode=0o700)
-        ipc.mkdir(mode=0o755)
-        os.chmod(ipc, 0o755)
+        # cap-drop=ALL removes root's DAC override on Linux bind mounts. Give
+        # the trusted controller our group, without exposing /output to agents.
+        host_group = os.getgid() if hasattr(os, 'getgid') else 0
+        # Robot evidence has nested files; keep them owned by the worker so
+        # temporary directories can be removed without host root privileges.
+        controller_user = os.getuid() if robot and hasattr(os, 'getuid') else 0
+        output.mkdir(mode=0o770)
+        os.chmod(output, 0o770)
+        ipc.mkdir(mode=0o775)
+        os.chmod(ipc, 0o775)
         download(base, job["asset_url"], job["lease_token"], inputs / "package.zip")
         os.chmod(inputs / "package.zip", 0o644)
         (inputs / "config.json").write_text(json.dumps(config), encoding="utf-8")
@@ -109,11 +131,17 @@ def execute_isolated_agent(base: str, job: dict, trusted_image: str, agent_image
                      else f"type=bind,src={ipc.resolve()},dst=/ipc")
         common = ["--rm", "--init", "--cap-drop=ALL", "--security-opt=no-new-privileges",
                   "--label", "uestc.evaluation_run=" + job["id"],
+                  "--label", "uestc.worker_id=" + os.environ.get('EVALUATION_WORKER_ID', 'legacy'),
                   f"--cpus={resources['cpus']}", f"--memory={resources['memory_mb']}m"]
         controller = [
-            "docker", "run", *common, "--pids-limit=512", "--name", trusted_name, "--user=0:0", "--network=none",
+            "docker", "run", *common, "--pids-limit=512", "--name", trusted_name, f"--user={controller_user}:{host_group}", "--network=none",
+            # A network=none container has no IP entry for its generated name.
+            # Java / Gradle still need getLocalHost() to resolve without DNS.
+            "--hostname=localhost",
             "--tmpfs=/tmp:rw,exec,nosuid,size=2048m", "--env", "MINEDOJO_HEADLESS=1",
-            "--env", "MINEDOJO_DEBUG_LOG=1", "--env", "MALMO_MINECRAFT_OUTPUT_LOGDIR=/output",
+            # Java's nested debug files are root-owned. Keep them on the
+            # controller tmpfs; stdout is retained in the worker's private log.
+            "--env", "MINEDOJO_DEBUG_LOG=1", "--env", "MALMO_MINECRAFT_OUTPUT_LOGDIR=/tmp/minecraft-logs",
             "--mount", f"type=bind,src={(inputs / 'config.json').resolve()},dst=/input/config.json,readonly",
             "--mount", f"type=bind,src={scenarios},dst=/scenarios/scenarios.json,readonly",
             "--mount", f"type=bind,src={output.resolve()},dst=/output",
@@ -130,6 +158,7 @@ def execute_isolated_agent(base: str, job: dict, trusted_image: str, agent_image
         ]
         if config["api"]["enabled"]:
             contestant.extend([
+                "--dns=127.0.0.1",
                 "--env", "EVALUATION_API_URL=" + proxy_url.rstrip("/") + f"/evaluation-worker/runs/{job['id']}/api",
                 "--env", "EVALUATION_API_TOKEN=" + job["api_token"],
             ])
@@ -234,7 +263,12 @@ def execute(base: str, job: dict, images: dict[str, str], proxy_url: str, networ
         container_name = "evaluation-" + uuid4().hex
         inputs, output = root / "input", root / "output"
         inputs.mkdir(mode=0o755)
-        output.mkdir(mode=0o777)
+        output.mkdir(mode=0o770)
+        os.chmod(output, 0o770)
+        host_group = os.getgid() if hasattr(os, 'getgid') else 0
+        # Match a non-root host worker's UID so nested results remain removable.
+        runner_user = (f'{os.getuid()}:{host_group}'
+                       if hasattr(os, 'getuid') and os.getuid() != 0 else '65534:65534')
         download(base, job["asset_url"], job["lease_token"], inputs / "package.zip")
         (inputs / "config.json").write_text(json.dumps(config), encoding="utf-8")
         if runtime:
@@ -242,7 +276,9 @@ def execute(base: str, job: dict, images: dict[str, str], proxy_url: str, networ
         command = [
             "docker", "run", "--rm", "--name", container_name, "--init", "--read-only", "--cap-drop=ALL",
             "--label", "uestc.evaluation_run=" + job["id"],
-            "--security-opt=no-new-privileges", "--pids-limit=256", "--user=65534:65534",
+            "--label", "uestc.worker_id=" + os.environ.get('EVALUATION_WORKER_ID', 'legacy'),
+            "--security-opt=no-new-privileges", "--pids-limit=256", f"--user={runner_user}", "--hostname=localhost",
+            f"--group-add={host_group}",
             f"--cpus={resources['cpus']}", f"--memory={resources['memory_mb']}m",
             "--tmpfs=/tmp:rw,noexec,nosuid,size=256m", "--network=" + (network if config["api"]["enabled"] else "none"),
             "--mount", f"type=bind,src={inputs.resolve()},dst=/input,readonly",
@@ -252,6 +288,7 @@ def execute(base: str, job: dict, images: dict[str, str], proxy_url: str, networ
             command.extend(["--gpus", "device=" + gpu_device])
         if config["api"]["enabled"]:
             command.extend([
+                "--dns=127.0.0.1",
                 "--env", "EVALUATION_API_URL=" + proxy_url.rstrip("/") + f"/evaluation-worker/runs/{job['id']}/api",
                 "--env", "EVALUATION_API_TOKEN=" + job["api_token"],
             ])
@@ -304,17 +341,26 @@ def main():
             (not pinned_image(agent_image)
              or not Path(scenarios_path).is_file())):
         supported.remove("minecraft-agent-v1")
-    worker_id = os.environ.get("EVALUATION_WORKER_ID", "worker-" + uuid4().hex)
+    worker_id = os.environ.get("EVALUATION_WORKER_ID") or "worker-" + uuid4().hex
+    os.environ['EVALUATION_WORKER_ID'] = worker_id
+    signal.signal(signal.SIGTERM, stop_worker)
+    recovered = False
     failures = 0
     allowed = {item.strip() for item in os.environ.get("EVALUATION_WORKER_ADAPTERS", "").split(",") if item.strip()}
     if any(not re.fullmatch(r"[a-z][a-z0-9-]{2,63}", item) for item in allowed):
         raise SystemExit("EVALUATION_WORKER_ADAPTERS must contain adapter IDs")
+    installed = {item.strip() for item in os.environ.get('EVALUATION_INSTALLED_ADAPTERS', '').split(',') if item.strip()}
+    if any(not re.fullmatch(r"[a-z][a-z0-9-]{2,63}", item) for item in installed):
+        raise SystemExit('EVALUATION_INSTALLED_ADAPTERS must contain adapter IDs')
     while True:
         try:
             subprocess.run(["docker", "info", "--format", "{{.ServerVersion}}"], timeout=10,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            if not recovered:
+                cleanup_worker_containers(worker_id)
+                recovered = True
             managed = request_json(base, "/evaluation-worker/runtime-catalog", headers={"Authorization": "Bearer " + token})
-            available = sorted(set(supported + managed["adapters"]))
+            available = sorted(set(supported + managed["adapters"]) | installed)
             if allowed:
                 available = [item for item in available if item in allowed]
             job = request_json(base, "/evaluation-worker/claim", "POST", {
@@ -324,6 +370,7 @@ def main():
             }, {"Authorization": "Bearer " + token}) if available else None
             failures = 0
         except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+            recovered = False
             if args.once:
                 raise SystemExit("Docker or evaluation API is unavailable") from None
             failures += 1
@@ -341,6 +388,7 @@ def main():
                 break
             threading.Event().wait(5)
             continue
+        print(f"Evaluation {job['id']} started ({job['config']['adapter']})", flush=True)
         try:
             log_root = os.environ.get("EVALUATION_LOG_DIRECTORY", "")
             logs = str(Path(log_root) / job["id"]) if log_root else ""
@@ -353,6 +401,7 @@ def main():
             request_json(base, f"/evaluation-worker/runs/{job['id']}/complete", "POST", result, {
                 "X-Evaluation-Lease": job["lease_token"],
             })
+            print(f"Evaluation {job['id']} {result['status']}", flush=True)
         except (OSError, RuntimeError):
             if args.once:
                 raise SystemExit("Evaluation completion could not be confirmed") from None

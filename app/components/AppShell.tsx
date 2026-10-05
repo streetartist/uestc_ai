@@ -117,7 +117,7 @@ export function AppShell({ children, title, eyebrow, actions, contained = true, 
           {loading ? <span className="account-loading">正在确认账户</span> : user ? (
             <>
               <div className="account-avatar">{user.name.slice(0, 1)}</div>
-              <div className="account-copy"><strong>{user.name}</strong><span>{user.email}</span></div>
+              <Link className="account-copy" href={`/people/${user.id}`} title="个人主页" onClick={() => setMenuOpen(false)}><strong>{user.name}</strong><span>{user.email}</span></Link>
               <button className="icon-button" disabled={signingOut} onClick={handleSignOut} aria-label={signingOut ? "正在退出登录" : "退出登录"} title={signingOut ? "正在退出" : "退出登录"}>{signingOut ? <LoaderCircle className="spin" size={16} /> : <LogOut size={16} />}</button>
             </>
           ) : (
@@ -170,7 +170,7 @@ export function AppShell({ children, title, eyebrow, actions, contained = true, 
                 <strong>参与</strong>
                 <Link href="/competitions">加入赛事</Link>
                 <Link href="/works">浏览作品</Link>
-                <Link href="/news">分享方法</Link>
+                <Link href="/contribute">分享文章与作品</Link>
               </nav>
             </div>
             <div className="footer-bottom">
