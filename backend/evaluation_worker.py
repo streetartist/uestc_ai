@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -73,15 +74,19 @@ def pinned_image(image: str) -> bool:
     return bool(re.fullmatch(r"(?:[^\s]+@)?sha256:[a-f0-9]{64}", image))
 
 
-def execute_minecraft(base: str, job: dict, trusted_image: str, agent_image: str,
+def execute_isolated_agent(base: str, job: dict, trusted_image: str, agent_image: str,
                       scenarios_path: str, proxy_url: str, network: str, log_directory: str = ""):
     config = job["config"]
     resources = config["resources"]
+    robot = config["adapter"] == "robot-arm-agent-v1"
+    label = "Robot arm" if robot else "Minecraft"
     if not pinned_image(agent_image):
-        raise RuntimeError("Minecraft agent image requires a pinned digest")
+        raise RuntimeError(label + " agent image requires a pinned digest")
     scenarios = Path(scenarios_path).resolve()
     if not scenarios.is_file():
-        raise RuntimeError("trusted Minecraft scenarios file is missing")
+        raise RuntimeError("trusted " + label + " scenarios file is missing")
+    if robot and resources["gpu"]:
+        raise RuntimeError("Robot arm v1 uses CPU rendering; GPU allocation is not supported")
     if config["api"]["enabled"] and (not proxy_url or not network):
         raise RuntimeError("API proxy URL and restricted Docker network are required")
 
@@ -95,7 +100,8 @@ def execute_minecraft(base: str, job: dict, trusted_image: str, agent_image: str
         download(base, job["asset_url"], job["lease_token"], inputs / "package.zip")
         os.chmod(inputs / "package.zip", 0o644)
         (inputs / "config.json").write_text(json.dumps(config), encoding="utf-8")
-        trusted_name, agent_name = "minecraft-env-" + uuid4().hex, "minecraft-agent-" + uuid4().hex
+        prefix = "robot-arm" if robot else "minecraft"
+        trusted_name, agent_name = prefix + "-env-" + uuid4().hex, prefix + "-agent-" + uuid4().hex
         # Docker Desktop cannot share a Linux Unix socket through a Windows bind
         # mount. Keep IPC on the Docker host while inputs/results remain files.
         ipc_volume = "minecraft-ipc-" + uuid4().hex if os.name == "nt" else None
@@ -151,7 +157,7 @@ def execute_minecraft(base: str, job: dict, trusted_image: str, agent_image: str
                     if ready:
                         break
                     if stopped.is_set() or controller_process.poll() is not None:
-                        raise RuntimeError("Minecraft controller exited before starting its socket")
+                        raise RuntimeError(label + " controller exited before starting its socket")
                     if time.monotonic() >= ready_deadline:
                         raise subprocess.TimeoutExpired(controller, resources["time_seconds"])
                     stopped.wait(min(0.5, max(0, ready_deadline - time.monotonic())))
@@ -161,19 +167,19 @@ def execute_minecraft(base: str, job: dict, trusted_image: str, agent_image: str
                 agent_result = subprocess.run(contestant, timeout=remaining,
                                               stdout=agent_log, stderr=subprocess.STDOUT, check=False)
                 if agent_result.returncode or stopped.is_set():
-                    raise RuntimeError("Minecraft agent exited before evaluation completed")
+                    raise RuntimeError(label + " agent exited before evaluation completed")
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise subprocess.TimeoutExpired(controller, resources["time_seconds"])
                 controller_process.wait(timeout=remaining)
                 if controller_process.returncode or stopped.is_set():
-                    raise RuntimeError("Minecraft controller did not complete")
+                    raise RuntimeError(label + " controller did not complete")
             result_path = output / "result.json"
             if not result_path.is_file() or result_path.stat().st_size > 256 * 1024:
-                raise RuntimeError("Minecraft controller did not write a valid result")
+                raise RuntimeError(label + " controller did not write a valid result")
             result = json.loads(result_path.read_text(encoding="utf-8"))
             if not isinstance(result, dict) or set(result) != {"episodes"}:
-                raise RuntimeError("Minecraft controller result has invalid fields")
+                raise RuntimeError(label + " controller result has invalid fields")
             return {"status": "completed", "episodes": result["episodes"]}
         finally:
             remove_container(agent_name)
@@ -189,6 +195,12 @@ def execute_minecraft(base: str, job: dict, trusted_image: str, agent_image: str
                                stderr=subprocess.DEVNULL, timeout=10, check=False)
             stopped.set()
             thread.join(timeout=2)
+            if robot and log_directory and (output / "evidence").is_dir():
+                shutil.copytree(output / "evidence", logs / "evidence", dirs_exist_ok=True)
+
+
+def execute_minecraft(base, job, trusted_image, agent_image, scenarios_path, proxy_url, network, log_directory=""):
+    return execute_isolated_agent(base, job, trusted_image, agent_image, scenarios_path, proxy_url, network, log_directory)
 
 
 def execute(base: str, job: dict, images: dict[str, str], proxy_url: str, network: str, gpu_device: str,
@@ -199,6 +211,13 @@ def execute(base: str, job: dict, images: dict[str, str], proxy_url: str, networ
     if not pinned_image(image):
         raise RuntimeError("adapter image is not configured with a pinned digest")
     resources = config["resources"]
+    if config["adapter"] == "robot-arm-agent-v1":
+        if not runtime:
+            raise RuntimeError("Robot arm evaluation requires a problem runtime with private scenarios")
+        with tempfile.TemporaryDirectory(prefix="robot-scenes-") as directory:
+            cases = Path(directory) / "scenarios.json"
+            cases.write_text(json.dumps(runtime["scenarios"]), encoding="utf-8")
+            return execute_isolated_agent(base, job, image, runtime.get("agent_image", ""), str(cases), proxy_url, network, log_directory)
     if config["adapter"] == "minecraft-agent-v1" and config["task"] == "open-world":
         if runtime:
             with tempfile.TemporaryDirectory(prefix="private-scenes-") as directory:
@@ -262,6 +281,8 @@ def execute(base: str, job: dict, images: dict[str, str], proxy_url: str, networ
 
 
 def main():
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env")
     parser = argparse.ArgumentParser(description="Poll and execute configured evaluation adapters")
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
@@ -285,12 +306,17 @@ def main():
         supported.remove("minecraft-agent-v1")
     worker_id = os.environ.get("EVALUATION_WORKER_ID", "worker-" + uuid4().hex)
     failures = 0
+    allowed = {item.strip() for item in os.environ.get("EVALUATION_WORKER_ADAPTERS", "").split(",") if item.strip()}
+    if any(not re.fullmatch(r"[a-z][a-z0-9-]{2,63}", item) for item in allowed):
+        raise SystemExit("EVALUATION_WORKER_ADAPTERS must contain adapter IDs")
     while True:
         try:
             subprocess.run(["docker", "info", "--format", "{{.ServerVersion}}"], timeout=10,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
             managed = request_json(base, "/evaluation-worker/runtime-catalog", headers={"Authorization": "Bearer " + token})
             available = sorted(set(supported + managed["adapters"]))
+            if allowed:
+                available = [item for item in available if item in allowed]
             job = request_json(base, "/evaluation-worker/claim", "POST", {
                 "adapters": available, "gpu": bool(gpu_device), "managed_runtime": True,
                 "api_proxy": bool(proxy_url and network), "worker_id": worker_id,
@@ -316,7 +342,9 @@ def main():
             threading.Event().wait(5)
             continue
         try:
-            result = execute(base, job, images, proxy_url, network, gpu_device, agent_image, scenarios_path)
+            log_root = os.environ.get("EVALUATION_LOG_DIRECTORY", "")
+            logs = str(Path(log_root) / job["id"]) if log_root else ""
+            result = execute(base, job, images, proxy_url, network, gpu_device, agent_image, scenarios_path, logs)
         except subprocess.TimeoutExpired:
             result = {"status": "failed", "error": "evaluation time limit exceeded"}
         except (OSError, ValueError, RuntimeError) as error:

@@ -144,3 +144,5 @@ worker/                      Cloudflare Worker 入口
 ## 许可证
 
 软件代码采用 [MIT License](LICENSE)。电子科技大学名称、校徽及其他学校标识不随代码许可证授权，详见 [资产与标识许可](ASSET_LICENSES.md)。
+
+机械臂仿真、可导入题目包与 Docker 验收见 [Panda 机械臂测评](backend/robot_arm_benchmark.md)。

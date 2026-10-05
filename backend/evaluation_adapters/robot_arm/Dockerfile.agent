@@ -1,0 +1,5 @@
+FROM python:3.11-slim-bookworm
+RUN pip install --no-cache-dir 'Pillow==11.3.0' 'numpy==1.26.4' 'requests==2.32.5'
+COPY backend/evaluation_adapters /runner/evaluation_adapters
+ENV PYTHONPATH=/runner PYTHONDONTWRITEBYTECODE=1
+CMD ["python", "-m", "evaluation_adapters.minecraft_agent"]

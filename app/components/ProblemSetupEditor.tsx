@@ -13,6 +13,7 @@ import { useToast } from "./ToastProvider";
 import "./problem-setup.css";
 
 type Scene = { id: string; label: string; difficulty: string; task_id: string; world_seed: number | string; max_steps: number; goals: string[] };
+type RobotScene = { id: string; label: string; difficulty: string; task: "lift" | "place" | "stack"; seed: number; max_steps: number; hold_steps: number; target?: number[] };
 type Runtime = { image: string; agent_image: string; scenarios: unknown[] };
 type Compute = { provider_id: string; enabled: boolean; max_gpu_seconds: number; max_cost_millis: number | null };
 type Provider = { id: string; name: string; enabled: boolean; gpu_label: string; gpu_count: number; hourly_price_millis: number };
@@ -42,6 +43,7 @@ function SetupForm({ problemId, initial, refresh, saved }: { problemId: string; 
   const toast = useToast();
   const active = config.evaluation_config.adapter ? config.evaluation_config as Extract<EvaluationConfig, { adapter: string }> : null;
   const minecraft = active?.adapter === "minecraft-agent-v1" && active.task === "open-world";
+  const robot = active?.adapter === "robot-arm-agent-v1";
   const allowedChannels = channels.data?.filter(c => c.enabled && (!config.ai?.allowed_channels.length || config.ai.allowed_channels.includes(c.id))) ?? [];
   const models = [...new Set([...allowedChannels.flatMap(c => Object.keys(c.models).filter(m => !c.disabled_models.includes(m))), ...(config.ai?.allowed_models ?? [])])].sort();
   function setRuntime(change: Partial<Runtime>) { setConfig(c => ({ ...c, runtime: { image: "", agent_image: "", scenarios: [], ...c.runtime, ...change } })); }
@@ -49,6 +51,12 @@ function SetupForm({ problemId, initial, refresh, saved }: { problemId: string; 
   function setCompute(change: Partial<Compute>) { setConfig(c => ({ ...c, compute: { provider_id: "", enabled: true, max_gpu_seconds: 36000, max_cost_millis: null, ...c.compute, ...change } })); }
   function setScene(index: number, change: Partial<Scene>) {
     setRuntime({ scenarios: config.runtime!.scenarios.map((s, i) => i === index ? { ...s as Scene, ...change } : s) });
+  }
+  function setRobotScene(index: number, change: Partial<RobotScene>) {
+    setRuntime({ scenarios: config.runtime!.scenarios.map((s, i) => i === index ? { ...s as RobotScene, ...change } : s) });
+  }
+  function replaceRobotScenes(scenarios: RobotScene[]) {
+    setConfig(c => ({ ...c, runtime: { image: "", agent_image: "", ...c.runtime, scenarios }, evaluation_config: active ? { ...active, resources: { ...active.resources, episodes: scenarios.length || 1 } } : c.evaluation_config }));
   }
   async function submit(e: FormEvent) {
     e.preventDefault(); setError(""); setBusy(true);
@@ -80,7 +88,7 @@ function SetupForm({ problemId, initial, refresh, saved }: { problemId: string; 
           if (item) setRuntime({ image: item.image, agent_image: item.agent_image });
         }}><option value="">选择已有题目的可信镜像…</option>{runtimes.data?.filter(r => r.adapter === active.adapter).map(r => <option key={r.problem_id} value={r.problem_id}>{r.name}</option>)}</select><small>仅复用镜像，本题测试场景独立设置。</small></label>
         <button type="button" className="text-button" onClick={() => setAdvanced(!advanced)}>{advanced ? "收起镜像设置" : "设置镜像 / 查看当前镜像"}</button>
-        {advanced && <div className="form-grid"><label className="form-field"><span>{minecraft ? "可信 MC 控制器镜像" : "可信评测器镜像"}</span><input value={config.runtime?.image ?? ""} onChange={e => setRuntime({ image: e.target.value.trim() })} placeholder="镜像名@sha256:… 或 sha256:…" /><small>管理员可登记新镜像，组织者可复用已登记镜像。</small></label>{minecraft && <label className="form-field"><span>独立智能体镜像</span><input value={config.runtime?.agent_image ?? ""} onChange={e => setRuntime({ agent_image: e.target.value.trim() })} placeholder="镜像名@sha256:…" /></label>}</div>}
+        {advanced && <div className="form-grid"><label className="form-field"><span>{minecraft ? "可信 MC 控制器镜像" : robot ? "可信机械臂仿真镜像" : "可信评测器镜像"}</span><input value={config.runtime?.image ?? ""} onChange={e => setRuntime({ image: e.target.value.trim() })} placeholder="镜像名@sha256:… 或 sha256:…" /><small>管理员可登记新镜像，组织者可复用已登记镜像。</small></label>{(minecraft || robot) && <label className="form-field"><span>独立智能体镜像</span><input value={config.runtime?.agent_image ?? ""} onChange={e => setRuntime({ agent_image: e.target.value.trim() })} placeholder="镜像名@sha256:…" /></label>}</div>}
         <div className="setup-scene-heading"><strong>私有测试场景 · {config.runtime?.scenarios.length ?? 0} 个</strong><label className="outline-button setup-file"><Upload size={14} />导入场景 JSON<input type="file" accept=".json,application/json" onChange={e => void loadScenes(e.target.files?.[0])} /></label></div>
         {minecraft && <div className="setup-scenes">{config.runtime?.scenarios.map((raw, i) => {
           const scene = raw as Partial<Scene>;
@@ -88,7 +96,17 @@ function SetupForm({ problemId, initial, refresh, saved }: { problemId: string; 
           return <div className="setup-scene" key={i}><div className="form-grid"><label className="form-field"><span>场景名称</span><input value={scene.label ?? ""} onChange={e => setScene(i, { label: e.target.value })} /></label><label className="form-field"><span>难度</span><select value={scene.difficulty ?? "beginner"} onChange={e => setScene(i, { difficulty: e.target.value })}><option value="beginner">入门</option><option value="intermediate">进阶</option><option value="challenge">挑战</option></select></label><label className="form-field"><span>世界种子</span><input value={scene.world_seed ?? ""} onChange={e => setScene(i, { world_seed: e.target.value })} /></label><label className="form-field"><span>最大行动步数</span><input type="number" min={1} max={3000} value={scene.max_steps ?? 600} onChange={e => setScene(i, { max_steps: Number(e.target.value) })} /></label></div><label className="form-field"><span>收集目标 · 用逗号分隔</span><input defaultValue={scene.goals.join(", ")} onBlur={e => setScene(i, { goals: e.target.value.split(/[,，]/).map(s => s.trim()).filter(Boolean) })} placeholder="log, crafting_table, wooden_pickaxe" /></label><button type="button" className="text-button" onClick={() => setRuntime({ scenarios: config.runtime!.scenarios.filter((_, n) => n !== i) })}>移除场景</button></div>;
         })}<button type="button" className="outline-button" disabled={(config.runtime?.scenarios.length ?? 0) >= 30} onClick={() => setRuntime({ scenarios: [...(config.runtime?.scenarios ?? []), { id: `scene-${crypto.randomUUID().slice(0, 8)}`, label: `场景 ${(config.runtime?.scenarios.length ?? 0) + 1}`, difficulty: "beginner", task_id: "open-ended", world_seed: 42, max_steps: 600, goals: ["log"] }] })}>添加场景</button><small>场景数量须与上面的“每次测试的场景数量”一致。</small></div>}
         <FieldError>{sceneError}</FieldError>
-        {!minecraft && config.runtime?.scenarios.length ? <p className="evaluation-note">场景作为 /input/scenarios.json 交给可信评测器，评测器需自行隔离队伍程序。</p> : null}
+        {robot && <div className="setup-scenes"><p className="evaluation-note">Panda 机械臂 · 20 Hz 物理控制 · 相机观察。私有种子与物体状态只保留在仿真端；连续满足目标才计为成功。</p>{config.runtime?.scenarios.map((raw, i) => {
+          const scene = raw as Partial<RobotScene>;
+          if (!raw || typeof raw !== "object") return <p key={i}>场景格式不正确，请重新导入。</p>;
+          return <div className="setup-scene" key={i}><div className="form-grid"><label className="form-field"><span>场景名称</span><input value={scene.label ?? ""} onChange={e => setRobotScene(i, { label: e.target.value })} /></label><label className="form-field"><span>任务</span><select value={scene.task ?? "lift"} onChange={e => {
+            const task = e.target.value as RobotScene["task"];
+            const next = { ...scene, task } as RobotScene;
+            if (task === "place") next.target = [0.1, 0.1]; else delete next.target;
+            setRuntime({ scenarios: config.runtime!.scenarios.map((s, n) => n === i ? next : s) });
+          }}><option value="lift">抓取并抬升</option><option value="place">指定位置放置</option><option value="stack">红色积木堆叠到绿色积木</option></select></label><label className="form-field"><span>布局种子</span><input type="number" min={0} max={2147483647} value={scene.seed ?? 42} onChange={e => setRobotScene(i, { seed: Number(e.target.value) })} /></label><label className="form-field"><span>最大物理步数</span><input type="number" min={10} max={3000} value={scene.max_steps ?? 600} onChange={e => setRobotScene(i, { max_steps: Number(e.target.value) })} /></label><label className="form-field"><span>目标连续稳定步数</span><input type="number" min={5} max={100} value={scene.hold_steps ?? 10} onChange={e => setRobotScene(i, { hold_steps: Number(e.target.value) })} /></label><label className="form-field"><span>难度</span><select value={scene.difficulty ?? "beginner"} onChange={e => setRobotScene(i, { difficulty: e.target.value })}><option value="beginner">入门</option><option value="intermediate">进阶</option><option value="challenge">挑战</option></select></label>{scene.task === "place" && [0, 1].map(axis => <label className="form-field" key={axis}><span>放置目标 {axis ? "Y" : "X"} · 米</span><input type="number" min={-0.25} max={0.25} step="0.01" value={scene.target?.[axis] ?? 0.1} onChange={e => setRobotScene(i, { target: [0, 1].map(n => n === axis ? Number(e.target.value) : scene.target?.[n] ?? 0.1) })} /></label>)}</div><button type="button" className="text-button" onClick={() => replaceRobotScenes(config.runtime!.scenarios.filter((_, n) => n !== i) as RobotScene[])}>移除场景</button></div>;
+        })}<button type="button" className="outline-button" disabled={(config.runtime?.scenarios.length ?? 0) >= 30} onClick={() => replaceRobotScenes([...(config.runtime?.scenarios ?? []) as RobotScene[], { id: `arm-${crypto.randomUUID().slice(0, 8)}`, label: `机械臂场景 ${(config.runtime?.scenarios.length ?? 0) + 1}`, difficulty: "beginner", task: "lift", seed: 42, max_steps: 600, hold_steps: 10 }])}>添加机械臂场景</button></div>}
+        {!minecraft && !robot && config.runtime?.scenarios.length ? <p className="evaluation-note">场景作为 /input/scenarios.json 交给可信评测器，评测器需自行隔离队伍程序。</p> : null}
         {!config.runtime && <p className="evaluation-note">未指定题目环境，继续使用测评端原有镜像配置。</p>}
       </fieldset>}
       <fieldset className="evaluation-editor"><legend>模型 API · 每队统一额度</legend><label className="evaluation-toggle"><input type="checkbox" checked={config.ai?.enabled ?? false} onChange={e => e.target.checked || initial.config.ai ? setAI({ enabled: e.target.checked }) : setConfig(c => ({ ...c, ai: null }))} />提供模型 API</label>

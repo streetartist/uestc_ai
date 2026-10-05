@@ -100,7 +100,7 @@ python backend/apply_problem_template.py --problem open-world-minecraft-agent --
 
 配置写入 `problems.evaluation_config`；提交时冻结配置与附件引用，生成 `evaluation_runs` 任务。覆盖提交会废弃旧任务。工作进程回传逐场景指标，平台校验指标名、范围和有限数值，再保存逐场景结果与平均值。公开作品页和评委工作台展示指标，**不产生外部成绩，也不影响评委打分或榜单**。
 
-内置 `minecraft-agent-v1`、`classification-v1` 与 `robot-arm-agent-v1` 是协议清单，不含游戏环境、数据集、仿真器或镜像。Minecraft 的 `open-world` 任务、观测指标计算及候选开源环境见 [Minecraft 运行端接入备忘](minecraft_benchmark.md)。新评测器可以通过 `EVALUATION_ADAPTER_MANIFEST_DIR` 安装受信任的 JSON 清单，字段为 `id`、`name`、`submission: {extension: "zip", label}`、`tasks: [id]`、`metrics: [{key, label, unit, direction: "min" | "max", min, max}]`。清单只声明协议，不接受可执行命令或镜像名。指标上限 64 个；已领取任务使用创建时冻结的指标定义。管理员配置的适配器只在 `EVALUATION_ENABLED_ADAPTERS` 包含对应 ID 且工作进程密钥存在时接受正式提交。
+内置适配器通过固定可信镜像运行。Minecraft 的 `open-world` 控制器见 [Minecraft 运行端接入备忘](minecraft_benchmark.md)；`robot-arm-agent-v1` 的 Panda / robosuite 仿真、题目包与实测见 [机械臂测评](robot_arm_benchmark.md)。`classification-v1` 仍只声明协议，需另行接入数据集及推理镜像。新评测器可以通过 `EVALUATION_ADAPTER_MANIFEST_DIR` 安装受信任的 JSON 清单，字段为 `id`、`name`、`submission: {extension: "zip", label}`、`tasks: [id]`、`metrics: [{key, label, unit, direction: "min" | "max", min, max}]`。清单只声明协议，不接受可执行命令或镜像名。指标上限 64 个；已领取任务使用创建时冻结的指标定义。管理员配置的适配器只在 `EVALUATION_ENABLED_ADAPTERS` 包含对应 ID 且工作进程密钥存在时接受正式提交。
 
 赛事与题目草稿仅对管理员、组织者开放；公开接口不返回草稿，未发布的题目不能被参赛者提交。私有题面可放在 Git 忽略的 `backend/data/challenge_drafts.json`，运行 `python backend/import_challenge_draft.py` 预检，再运行 `python backend/import_challenge_draft.py --apply` 导入；遇到同 slug 的赛事会拒绝覆盖，请在管理页继续编辑。导入前先备份数据库，不要将私有草稿文件加入版本控制。
 

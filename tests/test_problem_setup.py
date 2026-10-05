@@ -44,6 +44,29 @@ class ProblemSetupTests(unittest.TestCase):
     def document(self):
         return {"evaluation_config": deepcopy(self.config), "runtime": deepcopy(self.runtime_config), "ai": deepcopy(self.ai_config), "compute": deepcopy(self.compute_config)}
 
+    def test_robot_runtime_private_snapshot_and_missing_environment_guard(self):
+        from build_robot_arm_package import default_scenes
+        self.prepare()
+        self.app.config["EVALUATION_ENABLED_ADAPTERS"] = "robot-arm-agent-v1"
+        self.config.update(adapter="robot-arm-agent-v1", task="multi-step", metrics=["task_success", "stable_seconds"])
+        self.config["resources"]["episodes"] = 3
+        response = self.admin.patch(f"/api/manage/problems/{self.problem['id']}", json={"evaluation_config": self.config})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.submit().status_code, 409)
+        self.assertEqual(self.member.get(f"/api/problems/{self.problem['id']}/evaluation-budget?team_id={self.team['id']}").get_json()["used_runs"], 0)
+        self.runtime_config.update(agent_image="sha256:"+"b"*64, scenarios=default_scenes())
+        bad = self.document(); bad["runtime"]["scenarios"][0]["task"] = []
+        self.assertEqual(self.admin.put(self.url, json=bad).status_code, 400)
+        self.assertEqual(self.admin.put(self.url, json=self.document()).status_code, 200)
+        submission = self.submit()
+        self.assertEqual(submission.status_code, 201, submission.get_json())
+        job = self.worker.post("/api/evaluation-worker/claim", headers={"Authorization": "Bearer test-worker"},
+            json={"adapters": ["robot-arm-agent-v1"], "gpu": False, "managed_runtime": True}).get_json()
+        self.assertEqual(job["runtime"], self.runtime_config)
+        public = self.member.get(f"/api/evaluation-runs/{job['id']}").get_data(as_text=True)
+        self.assertNotIn('"seed"', public)
+        self.assertNotIn("sha256", public)
+
     def package(self, document, extra=None):
         output = io.BytesIO()
         with zipfile.ZipFile(output, "w") as archive:
@@ -177,7 +200,12 @@ class WorkerBootstrapTests(unittest.TestCase):
     def environment(self):
         return patch.dict(os.environ, {"EVALUATION_API_BASE": "http://127.0.0.1:5000/api",
             "EVALUATION_WORKER_TOKEN": "test-token", "EVALUATION_IMAGES_JSON": "{}",
-            "EVALUATION_API_PROXY_URL": "", "EVALUATION_NETWORK": "", "EVALUATION_GPU_DEVICE": ""})
+            "EVALUATION_API_PROXY_URL": "", "EVALUATION_NETWORK": "", "EVALUATION_GPU_DEVICE": "", "EVALUATION_WORKER_ADAPTERS": ""})
+
+    def test_worker_adapter_filter_does_not_claim_unrelated_queued_jobs(self):
+        with self.environment(), patch.dict(os.environ, {"EVALUATION_WORKER_ADAPTERS": "robot-arm-agent-v1"}), patch.object(sys, "argv", ["worker", "--once"]), patch("evaluation_worker.subprocess.run"), patch("evaluation_worker.request_json", side_effect=[{"adapters": ["classification-v1", "robot-arm-agent-v1"]}, None]) as api:
+            evaluation_worker.main()
+            self.assertEqual(api.call_args_list[1].args[3]["adapters"], ["robot-arm-agent-v1"])
 
     def test_discovers_managed_adapters_without_environment_image_map(self):
         with self.environment(), patch.dict(os.environ, {"EVALUATION_IMAGES_JSON": '{"classification-v1":"python:latest"}'}), patch.object(sys, "argv", ["worker", "--once"]), patch("evaluation_worker.subprocess.run"), patch("evaluation_worker.request_json", side_effect=[{"adapters": ["classification-v1"]}, None]) as api:

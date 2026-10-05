@@ -229,6 +229,9 @@ def submit_work():
     # Serialize quota reads, first submissions and overwrites with policy saves.
     lock_problem(problem.id)
     db.session.refresh(problem)
+    if status == "submitted" and problem.evaluation_config.get("adapter") == "robot-arm-agent-v1" and not problem.runtime:
+        db.session.rollback()
+        return jsonify({"error": "组织方尚未配置机械臂仿真环境与私有场景，请稍后提交。"}), 409
     submission = Submission.query.filter_by(problem_id=problem.id, team_id=team.id).populate_existing().first()
     budget = evaluation_budget(problem, submission)
     if status == "submitted" and budget["enabled"] and budget["remaining_runs"] == 0:

@@ -47,8 +47,13 @@ def validate_runtime(value, evaluation):
             raise ValueError("MC 开放世界需要独立的智能体镜像。")
         from evaluation_adapters.minecraft_runner import validate_scenarios
         validate_scenarios(scenes, evaluation["resources"]["episodes"])
+    elif evaluation["adapter"] == "robot-arm-agent-v1":
+        if not value.get("agent_image"):
+            raise ValueError("机械臂需要独立的智能体镜像。")
+        from evaluation_adapters.robot_arm_runner import validate_scenarios
+        validate_scenarios(scenes, evaluation["resources"]["episodes"])
     elif value.get("agent_image"):
-        raise ValueError("独立智能体镜像只用于 MC 开放世界评测器。")
+        raise ValueError("独立智能体镜像只用于 MC 或机械臂评测器。")
     elif scenes and len(scenes) != evaluation["resources"]["episodes"]:
         raise ValueError("私有场景数量必须与每次测试的场景数量一致。")
     return {"image": value["image"], "agent_image": value.get("agent_image", ""), "scenarios": scenes}

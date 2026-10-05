@@ -1,0 +1,104 @@
+{
+  "id": "robot-arm-manipulation",
+  "name": "慧眼巧手：机械臂智能体",
+  "description": "Panda 仿真机械臂、相机观察、独立程序容器与可信物理判分。",
+  "problem": {
+    "code": "RA-001",
+    "slug": "robot-arm-manipulation",
+    "title": "慧眼巧手：机械臂智能体操作挑战赛",
+    "summary": "根据自然语言指令与机械臂相机画面生成策略代码，完成抓取、放置和堆叠任务。",
+    "difficulty": 5,
+    "compute_note": "首版 CPU 仿真与软件渲染；每次测试 900 秒、3 个场景、每队 3 次，正式参数由组织方设置。",
+    "statement_md": "# 慧眼巧手：机械臂智能体操作挑战赛\n\n## 挑战目标\n根据任务指令与相机画面，生成并执行策略代码，通过统一接口控制 Panda 机械臂，完成抓取抬升、指定位置放置和积木堆叠。智能体需根据执行反馈修正视觉定位、动作规划和操作策略。\n\n## 仿真环境\n平台采用 robosuite 1.5.2 / MuJoCo 3.3.7，固定 Panda 机械臂、双指夹爪和 20 Hz 控制。当前物体是红色与绿色积木。公开练习场景与私有测试布局分离。首版不包含完整分类任务库、任意物体、多步语言组合和外部扰动；组织方可在后续版本扩展。\n\n## 交付协议\n上传 ZIP，根目录包含 agent.py 与 config.json。agent.py 定义 Agent，提供 act(observation)，可提供 reset(goal) 和 configure(config)。每个场景 reset 收到任务说明；放置目标 target_xy 是允许读取的任务信息。\n\n观察提供 images_jpeg_base64（外部与腕部相机）、camera_calibration（相机内参与 camera_to_world 外参）、eef_position、eef_quaternion、gripper_position、step、last_action_valid 和 control。不提供物体真值、场景种子、内部奖励或判分状态。位置单位为米，世界坐标系。\n\n动作为 {\"target\": [x,y,z], \"gripper\": 1, \"repeat\": 20}，或 {\"delta\": [dx,dy,dz,rx,ry,rz,g], \"repeat\": 1}。目标控制由统一位置伺服实现，不替选手做物体定位或抓取规划；delta 各项范围 [-1,1]，g=1 关闭夹爪，g=-1 打开。repeat 为 1—20，计入最大物理步数。生成的代码只在队伍独立容器内执行。依赖预装 numpy、Pillow 和 requests；其他依赖由组织方预先登记镜像。\n\n## 可靠测评\n仿真器与选手程序处于独立容器，私有场景和结果目录仅仿真端可读写。目标需连续满足规定稳定步数才判成功；放置和堆叠还要求真实抓取抬升历史，并在目标处松开夹爪。不能通过提交自报成绩、改写物体或短暂碰到目标获得成功。\n\n## 指标\n任务成功率、稳定抓取比例、掉落后重新稳定抓取比例、动作指令数、运行时间、无效动作数和最长目标稳定时间。无掉落时恢复比例记 0，并不代表恢复失败；恢复指标不等同于整个任务完成。全部场景共用运行时限，超时或失败仍计入每队测试次数。模型调用通过平台受控 API，地址和短期令牌由运行端注入；组织方需配置允许模型与统一额度。\n\n## 提交与报告\n提交智能体代码、运行配置、完整研究报告（PDF）及复现说明。报告应覆盖视觉定位、任务分解、策略代码、反馈修正、基线对比、失败案例和资源使用。评测指标用于展示和评委参考；最终评分依据正式公布的规则。\n\n## 开放状态\n模板创建草稿。组织方应导入完整题目包或绑定已验收的两个镜像及私有场景，接入测评端后再发布。",
+    "submission_schema": {
+      "fields": [
+        "repository",
+        "runtime_notes",
+        "demo_video"
+      ],
+      "field_definitions": {
+        "repository": {
+          "label": "代码仓库地址",
+          "type": "url",
+          "required": false,
+          "help": "可选；最终运行使用上传的 ZIP 程序包。"
+        },
+        "runtime_notes": {
+          "label": "运行与复现说明",
+          "type": "textarea",
+          "required": true,
+          "help": "说明入口、依赖、config.json、代码生成执行机制、技能库及记忆策略。"
+        },
+        "demo_video": {
+          "label": "典型案例演示视频",
+          "type": "url",
+          "required": false,
+          "help": "可选；建议包含成功与失败恢复案例。"
+        }
+      },
+      "readme_required": true,
+      "readme_template": "# 系统设计\n\n# 视觉定位与任务规划\n\n# 策略代码与统一接口\n\n# 实验表现\n\n# 失败恢复与案例分析\n\n# 运行配置与复现\n\n# 模型及资源使用声明\n",
+      "attachments": [
+        {
+          "key": "agent_code",
+          "label": "智能体代码与运行配置",
+          "extensions": [
+            "zip"
+          ],
+          "min_count": 1,
+          "max_count": 1,
+          "required_files": [
+            "agent.py",
+            "config.json"
+          ]
+        },
+        {
+          "key": "research_report",
+          "label": "完整研究报告",
+          "extensions": [
+            "pdf"
+          ],
+          "min_count": 1,
+          "max_count": 1
+        }
+      ]
+    },
+    "judging_schema": {
+      "rubric": {
+        "系统设计与策略实现": 0.3,
+        "任务完成与操作稳定性": 0.3,
+        "实验与失败案例分析": 0.2,
+        "研究报告与可复现性": 0.2
+      }
+    },
+    "scoring_config": {
+      "external_weight_percent": 0
+    },
+    "evaluation_config": {
+      "adapter": "robot-arm-agent-v1",
+      "task": "multi-step",
+      "max_team_runs": 3,
+      "resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "gpu": false,
+        "time_seconds": 900,
+        "episodes": 3
+      },
+      "api": {
+        "enabled": false,
+        "max_calls": 0
+      },
+      "metrics": [
+        "task_success",
+        "stable_grasps",
+        "recovery_success",
+        "action_count",
+        "execution_seconds",
+        "invalid_actions",
+        "stable_seconds"
+      ]
+    },
+    "source_url": "https://github.com/ARISE-Initiative/robosuite"
+  }
+}
