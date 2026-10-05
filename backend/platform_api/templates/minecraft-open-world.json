@@ -27,7 +27,7 @@
     "judging_schema": {"rubric": {"系统设计与策略实现": 0.3, "探索与任务完成表现": 0.3, "适应能力与失败恢复分析": 0.2, "研究报告与可复现性": 0.2}},
     "scoring_config": {"external_weight_percent": 0},
     "evaluation_config": {
-      "adapter": "minecraft-agent-v1", "task": "open-world",
+      "adapter": "minecraft-agent-v1", "task": "open-world", "max_team_runs": 3,
       "resources": {"cpus": 4, "memory_mb": 8192, "gpu": false, "time_seconds": 3600, "episodes": 3},
       "api": {"enabled": true, "max_calls": 300},
       "metrics": ["task_success", "exploration_progress", "objectives", "unique_items", "distance_blocks", "tech_milestones", "deaths", "invalid_actions", "mean_step_ms"]

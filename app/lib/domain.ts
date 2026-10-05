@@ -67,7 +67,18 @@ export type EvaluationConfig = {
   resources: { cpus: number; memory_mb: number; gpu: boolean; time_seconds: number; episodes: number };
   api: { enabled: boolean; max_calls: number };
   metrics: string[];
-} | { adapter?: undefined; task?: undefined; resources?: undefined; api?: undefined; metrics?: undefined };
+  max_team_runs?: number;
+} | { adapter?: undefined; task?: undefined; resources?: undefined; api?: undefined; metrics?: undefined; max_team_runs?: undefined };
+
+export type EvaluationBudget = {
+  problem_id: string;
+  team_id: string;
+  enabled: boolean;
+  time_seconds: number | null;
+  max_team_runs: number | null;
+  used_runs: number;
+  remaining_runs: number | null;
+};
 
 export type EvaluationAdapter = {
   id: string;
@@ -84,6 +95,7 @@ export type EvaluationRun = {
   status: "queued" | "running" | "completed" | "failed" | "superseded";
   attempts: number;
   api_calls_used: number;
+  time_seconds: number;
   metrics: Record<string, number>;
   metric_definitions: EvaluationAdapter["metrics"];
   episodes: Array<Record<string, number> | {

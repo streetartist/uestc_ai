@@ -16,6 +16,7 @@ import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from uuid import uuid4
 from pathlib import Path
@@ -35,7 +36,12 @@ def request_json(base: str, path: str, method="GET", body=None, headers=None):
 
 
 def download(base: str, path: str, lease: str, destination: Path):
-    request = urllib.request.Request(base + path, headers={"X-Evaluation-Lease": lease})
+    url = urllib.parse.urljoin(base.rstrip("/") + "/", path)
+    origin = urllib.parse.urlsplit(base)
+    target = urllib.parse.urlsplit(url)
+    if (target.scheme, target.netloc) != (origin.scheme, origin.netloc):
+        raise RuntimeError("evaluation asset must use the API origin")
+    request = urllib.request.Request(url, headers={"X-Evaluation-Lease": lease})
     with urllib.request.urlopen(request, timeout=60) as response, destination.open("wb") as target:
         while chunk := response.read(1024 * 1024):
             target.write(chunk)
@@ -61,11 +67,16 @@ def remove_container(name: str):
         pass
 
 
+def pinned_image(image: str) -> bool:
+    # Local builds have an immutable image ID; deployed images use a repo digest.
+    return bool(re.fullmatch(r"(?:[^\s]+@)?sha256:[a-f0-9]{64}", image))
+
+
 def execute_minecraft(base: str, job: dict, trusted_image: str, agent_image: str,
-                      scenarios_path: str, proxy_url: str, network: str):
+                      scenarios_path: str, proxy_url: str, network: str, log_directory: str = ""):
     config = job["config"]
     resources = config["resources"]
-    if not re.fullmatch(r"[^\s]+@sha256:[a-f0-9]{64}", agent_image):
+    if not pinned_image(agent_image):
         raise RuntimeError("Minecraft agent image requires a pinned digest")
     scenarios = Path(scenarios_path).resolve()
     if not scenarios.is_file():
@@ -84,23 +95,31 @@ def execute_minecraft(base: str, job: dict, trusted_image: str, agent_image: str
         os.chmod(inputs / "package.zip", 0o644)
         (inputs / "config.json").write_text(json.dumps(config), encoding="utf-8")
         trusted_name, agent_name = "minecraft-env-" + uuid4().hex, "minecraft-agent-" + uuid4().hex
+        # Docker Desktop cannot share a Linux Unix socket through a Windows bind
+        # mount. Keep IPC on the Docker host while inputs/results remain files.
+        ipc_volume = "minecraft-ipc-" + uuid4().hex if os.name == "nt" else None
+        ipc_mount = (f"type=volume,src={ipc_volume},dst=/ipc" if ipc_volume
+                     else f"type=bind,src={ipc.resolve()},dst=/ipc")
         common = ["--rm", "--init", "--cap-drop=ALL", "--security-opt=no-new-privileges",
-                  "--pids-limit=256", f"--cpus={resources['cpus']}", f"--memory={resources['memory_mb']}m"]
+                  "--label", "uestc.evaluation_run=" + job["id"],
+                  f"--cpus={resources['cpus']}", f"--memory={resources['memory_mb']}m"]
         controller = [
-            "docker", "run", *common, "--name", trusted_name, "--user=0:0", "--network=none",
+            "docker", "run", *common, "--pids-limit=512", "--name", trusted_name, "--user=0:0", "--network=none",
             "--tmpfs=/tmp:rw,exec,nosuid,size=2048m", "--env", "MINEDOJO_HEADLESS=1",
+            "--env", "MINEDOJO_DEBUG_LOG=1", "--env", "MALMO_MINECRAFT_OUTPUT_LOGDIR=/output",
             "--mount", f"type=bind,src={(inputs / 'config.json').resolve()},dst=/input/config.json,readonly",
             "--mount", f"type=bind,src={scenarios},dst=/scenarios/scenarios.json,readonly",
             "--mount", f"type=bind,src={output.resolve()},dst=/output",
-            "--mount", f"type=bind,src={ipc.resolve()},dst=/ipc",
+            "--mount", ipc_mount,
             trusted_image,
         ]
         contestant = [
-            "docker", "run", *common, "--read-only", "--name", agent_name, "--user=65534:65534",
+            "docker", "run", *common, "--pids-limit=256", "--read-only", "--name", agent_name, "--user=65534:65534",
             "--tmpfs=/tmp:rw,exec,nosuid,size=128m",
+            "--env", f"EVALUATION_SOCKET_TIMEOUT={resources['time_seconds']}",
             "--network=" + (network if config["api"]["enabled"] else "none"),
             "--mount", f"type=bind,src={(inputs / 'package.zip').resolve()},dst=/input/package.zip,readonly",
-            "--mount", f"type=bind,src={ipc.resolve()},dst=/ipc",
+            "--mount", ipc_mount,
         ]
         if config["api"]["enabled"]:
             contestant.extend([
@@ -112,24 +131,42 @@ def execute_minecraft(base: str, job: dict, trusted_image: str, agent_image: str
         thread = threading.Thread(target=heartbeat, args=(base, job["id"], job["lease_token"], stopped,
                                                           [trusted_name, agent_name]), daemon=True)
         deadline = time.monotonic() + resources["time_seconds"]
+        controller_process = None
         thread.start()
+        logs = Path(log_directory) if log_directory else root
+        logs.mkdir(parents=True, exist_ok=True)
         try:
-            controller_process = subprocess.Popen(controller, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            ready_deadline = min(deadline, time.monotonic() + 120)
-            while not (ipc / "agent.sock").exists():
-                if stopped.is_set() or controller_process.poll() is not None:
-                    raise RuntimeError("Minecraft controller exited before starting its socket")
-                if time.monotonic() >= ready_deadline:
-                    raise TimeoutError("Minecraft controller did not become ready")
-                stopped.wait(0.2)
-            remaining = max(0.1, deadline - time.monotonic())
-            agent_result = subprocess.run(contestant, timeout=remaining,
-                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-            if agent_result.returncode or stopped.is_set():
-                raise RuntimeError("Minecraft agent exited before evaluation completed")
-            controller_process.wait(timeout=max(0.1, deadline - time.monotonic()))
-            if controller_process.returncode or stopped.is_set():
-                raise RuntimeError("Minecraft controller did not complete")
+            with (logs / "controller.log").open("wb") as controller_log, (logs / "agent.log").open("wb") as agent_log:
+                controller_process = subprocess.Popen(controller, stdout=controller_log, stderr=subprocess.STDOUT)
+                ready_deadline = min(deadline, time.monotonic() + 120)
+                while True:
+                    ready_remaining = ready_deadline - time.monotonic()
+                    if ready_remaining <= 0:
+                        raise subprocess.TimeoutExpired(controller, resources["time_seconds"])
+                    ready = (subprocess.run(["docker", "exec", trusted_name, "test", "-S", "/ipc/agent.sock"],
+                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                            timeout=min(10, ready_remaining), check=False).returncode == 0
+                             if ipc_volume else (ipc / "agent.sock").exists())
+                    if ready:
+                        break
+                    if stopped.is_set() or controller_process.poll() is not None:
+                        raise RuntimeError("Minecraft controller exited before starting its socket")
+                    if time.monotonic() >= ready_deadline:
+                        raise subprocess.TimeoutExpired(controller, resources["time_seconds"])
+                    stopped.wait(min(0.5, max(0, ready_deadline - time.monotonic())))
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(controller, resources["time_seconds"])
+                agent_result = subprocess.run(contestant, timeout=remaining,
+                                              stdout=agent_log, stderr=subprocess.STDOUT, check=False)
+                if agent_result.returncode or stopped.is_set():
+                    raise RuntimeError("Minecraft agent exited before evaluation completed")
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(controller, resources["time_seconds"])
+                controller_process.wait(timeout=remaining)
+                if controller_process.returncode or stopped.is_set():
+                    raise RuntimeError("Minecraft controller did not complete")
             result_path = output / "result.json"
             if not result_path.is_file() or result_path.stat().st_size > 256 * 1024:
                 raise RuntimeError("Minecraft controller did not write a valid result")
@@ -140,19 +177,28 @@ def execute_minecraft(base: str, job: dict, trusted_image: str, agent_image: str
         finally:
             remove_container(agent_name)
             remove_container(trusted_name)
+            if controller_process is not None:
+                try:
+                    controller_process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    controller_process.kill()
+                    controller_process.wait(timeout=10)
+            if ipc_volume:
+                subprocess.run(["docker", "volume", "rm", ipc_volume], stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, timeout=10, check=False)
             stopped.set()
             thread.join(timeout=2)
 
 
 def execute(base: str, job: dict, images: dict[str, str], proxy_url: str, network: str, gpu_device: str,
-            agent_image: str = "", scenarios_path: str = ""):
+            agent_image: str = "", scenarios_path: str = "", log_directory: str = ""):
     config = job["config"]
     image = images.get(config["adapter"], "")
-    if not re.fullmatch(r"[^\s]+@sha256:[a-f0-9]{64}", image):
+    if not pinned_image(image):
         raise RuntimeError("adapter image is not configured with a pinned digest")
     resources = config["resources"]
     if config["adapter"] == "minecraft-agent-v1" and config["task"] == "open-world":
-        return execute_minecraft(base, job, image, agent_image, scenarios_path, proxy_url, network)
+        return execute_minecraft(base, job, image, agent_image, scenarios_path, proxy_url, network, log_directory)
     if config["api"]["enabled"] and (not proxy_url or not network):
         raise RuntimeError("API proxy URL and restricted Docker network are required")
     if resources["gpu"] and (not gpu_device or not re.fullmatch(r"(?:GPU-)?[a-zA-Z0-9-]{8,64}", gpu_device)):
@@ -167,6 +213,7 @@ def execute(base: str, job: dict, images: dict[str, str], proxy_url: str, networ
         (inputs / "config.json").write_text(json.dumps(config), encoding="utf-8")
         command = [
             "docker", "run", "--rm", "--name", container_name, "--init", "--read-only", "--cap-drop=ALL",
+            "--label", "uestc.evaluation_run=" + job["id"],
             "--security-opt=no-new-privileges", "--pids-limit=256", "--user=65534:65534",
             f"--cpus={resources['cpus']}", f"--memory={resources['memory_mb']}m",
             "--tmpfs=/tmp:rw,noexec,nosuid,size=256m", "--network=" + (network if config["api"]["enabled"] else "none"),
@@ -185,7 +232,7 @@ def execute(base: str, job: dict, images: dict[str, str], proxy_url: str, networ
         thread = threading.Thread(target=heartbeat, args=(base, job["id"], job["lease_token"], stopped, container_name), daemon=True)
         thread.start()
         try:
-            result = subprocess.run(command, timeout=resources["time_seconds"] + 30,
+            result = subprocess.run(command, timeout=resources["time_seconds"],
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
             if stopped.is_set():
                 raise RuntimeError("worker lease could not be renewed")
@@ -223,7 +270,7 @@ def main():
     scenarios_path = os.environ.get("EVALUATION_MINECRAFT_SCENARIOS", "")
     supported = list(images)
     if ("minecraft-agent-v1" in supported and
-            (not re.fullmatch(r"[^\s]+@sha256:[a-f0-9]{64}", agent_image)
+            (not pinned_image(agent_image)
              or not Path(scenarios_path).is_file())):
         supported.remove("minecraft-agent-v1")
     if not supported:
@@ -239,7 +286,9 @@ def main():
             continue
         try:
             result = execute(base, job, images, proxy_url, network, gpu_device, agent_image, scenarios_path)
-        except (OSError, ValueError, subprocess.TimeoutExpired, RuntimeError) as error:
+        except subprocess.TimeoutExpired:
+            result = {"status": "failed", "error": "evaluation time limit exceeded"}
+        except (OSError, ValueError, RuntimeError) as error:
             result = {"status": "failed", "error": str(error)[:400]}
         request_json(base, f"/evaluation-worker/runs/{job['id']}/complete", "POST", result, {
             "X-Evaluation-Lease": job["lease_token"],

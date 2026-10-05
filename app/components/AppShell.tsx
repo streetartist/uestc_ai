@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  BookOpen, FileText, FolderArchive, Home, LoaderCircle, LogIn, LogOut, Menu, Newspaper,
+  BookOpen, Cable, FileText, FolderArchive, Home, LoaderCircle, LogIn, LogOut, Menu, Newspaper,
   PenLine, Scale, Trophy, UserRound, Users, X,
 } from "lucide-react";
 import { useSession } from "@/app/components/SessionProvider";
@@ -33,6 +33,7 @@ const baseNavigation = [
   { href: "/news", label: "资讯", icon: Newspaper },
   { href: "/about", label: "关于我们", icon: Users },
   { href: "/dashboard", label: "工作台", icon: FileText },
+  { href: "/api-platform", label: "API 平台", icon: Cable },
 ];
 
 export function AppShell({ children, title, eyebrow, actions, contained = true, variant }: AppShellProps) {

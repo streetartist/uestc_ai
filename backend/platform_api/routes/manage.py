@@ -6,6 +6,8 @@ import secrets
 from flask import Blueprint, jsonify, request
 
 from ..extensions import db
+from ..ai_models import AIGrant
+from ..ai_quotas import lock_competition, lock_problem, remove_unused_grants
 from ..models import (
     AuditLog,
     Competition,
@@ -225,6 +227,14 @@ def delete_track(track_id: str):
     has_submissions = Submission.query.join(Problem).filter(Problem.track_id == track.id).first()
     if Registration.query.filter_by(track_id=track.id).first() or has_submissions:
         return jsonify({"error": "track has participation records"}), 409
+    lock_competition(track.competition_id)
+    for problem_id in sorted(problem.id for problem in track.problems):
+        lock_problem(problem_id)
+    from ..compute import remove_unused_compute
+    if not remove_unused_compute(problem_ids=[problem.id for problem in track.problems]):
+        return jsonify({"error": "track has compute records"}), 409
+    if not remove_unused_grants(AIGrant.problem_id.in_([problem.id for problem in track.problems])):
+        return jsonify({"error": "track has participation records"}), 409
     audit("track.deleted", "track", track.id, {"name": track.name, "slug": track.slug})
     db.session.delete(track)
     db.session.commit()
@@ -265,11 +275,14 @@ def update_problem(problem_id: str):
         except ValueError as error:
             return jsonify({"error": str(error)}), 400
     if "evaluation_config" in data or "scoring_config" in data:
+        from ..evaluation import fixed_evaluation_rules
+        lock_problem(problem.id)
+        db.session.refresh(problem)
         try:
             data["evaluation_config"] = validate_evaluation_config(data.get("evaluation_config", problem.evaluation_config))
         except ValueError as error:
             return jsonify({"error": str(error)}), 400
-        if Submission.query.filter_by(problem_id=problem.id).first() and data["evaluation_config"] != (problem.evaluation_config or {}):
+        if Submission.query.filter_by(problem_id=problem.id).first() and fixed_evaluation_rules(data["evaluation_config"]) != fixed_evaluation_rules(problem.evaluation_config):
             return jsonify({"error": "evaluation rules cannot change after submissions"}), 409
     update_fields(problem, data, PROBLEM_FIELDS)
     audit("problem.updated", "problem", problem.id, {"fields": sorted(set(data) & PROBLEM_FIELDS)})
@@ -285,6 +298,13 @@ def delete_problem(problem_id: str):
         return jsonify({"error": "problem not found"}), 404
     if Submission.query.filter_by(problem_id=problem.id).first():
         return jsonify({"error": "problem has submissions"}), 409
+    lock_competition(problem.track.competition_id)
+    lock_problem(problem.id)
+    from ..compute import remove_unused_compute
+    if not remove_unused_compute(problem_ids=[problem.id]):
+        return jsonify({"error": "problem has compute records"}), 409
+    if not remove_unused_grants(AIGrant.problem_id == problem.id):
+        return jsonify({"error": "problem has API records"}), 409
     audit("problem.deleted", "problem", problem.id, {"code": problem.code, "title": problem.title})
     db.session.delete(problem)
     db.session.commit()

@@ -5,6 +5,8 @@ import { FormEvent, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, FilePlus2, Save, Trash2 } from "lucide-react";
 import { AppShell } from "@/app/components/AppShell";
+import { ProblemAIQuotas } from "@/app/components/AIQuotaEditor";
+import { ComputeQuotaEditor } from "@/app/components/ComputeQuotaEditor";
 import { EvaluationConfigEditor } from "@/app/components/EvaluationConfigEditor";
 import { SubmissionSchemaEditor } from "@/app/components/SubmissionSchemaEditor";
 import { ConfirmDialog } from "@/app/components/ConfirmDialog";
@@ -16,6 +18,7 @@ import { api, formatApiError, jsonBody } from "@/app/lib/api";
 import type { Competition, EvaluationConfig, Problem, ProblemTemplate, SubmissionSchema, Track } from "@/app/lib/domain";
 import { validateForm } from "@/app/lib/formValidation";
 import { useApiResource } from "@/app/lib/useApiResource";
+import "@/app/api-platform/platform.css";
 
 function rubricText(problem?: Problem) {
   return Object.entries(problem?.judging_schema.rubric ?? {}).map(([name, weight]) => `${name}: ${weight}`).join("\n");
@@ -85,6 +88,7 @@ function ProblemEditor({ problem, initialTrack, competition, tracks, isNew, onCr
   reload: () => Promise<void>;
 }) {
   const [trackId, setTrackId] = useState(initialTrack.id);
+  const [panel, setPanel] = useState<"settings" | "quotas">("settings");
   const [code, setCode] = useState(problem?.code ?? "");
   const [slug, setSlug] = useState(problem?.slug ?? "");
   const [title, setTitle] = useState(problem?.title ?? "");
@@ -180,6 +184,13 @@ function ProblemEditor({ problem, initialTrack, competition, tracks, isNew, onCr
 
   return <>
     <AppShell title={isNew ? "发布赛题" : `编辑：${problem?.title}`} eyebrow="PROBLEM WORKBENCH" actions={<Link className="outline-button" href={`/manage/competitions/${selectedTrack.competition.id}`}><ArrowLeft size={15} />返回赛事</Link>}>
+      {!isNew && <nav className="ai-tabs problem-editor-tabs" aria-label="题目管理功能">
+        <button type="button" className={panel === "settings" ? "active" : ""} aria-pressed={panel === "settings"} onClick={() => setPanel("settings")}>题目设置</button>
+        <button type="button" className={panel === "quotas" ? "active" : ""} aria-pressed={panel === "quotas"} onClick={() => setPanel("quotas")}>资源额度</button>
+      </nav>}
+      {problem && panel === "quotas" && <ProblemAIQuotas key={problem.id} problem={{ id: problem.id, title: problem.title, competition_id: tracks.find(item => item.track.id === problem.track_id)?.competition.id ?? competition.id }} />}
+      {problem && panel === "quotas" && <div style={{ marginTop: 32 }}><ComputeQuotaEditor problemId={problem.id} /></div>}
+      <div hidden={panel !== "settings"}>
       <div className="problem-editor-layout">
         <form className="manage-form problem-editor-form" onSubmit={save} noValidate>
           <div className="manage-form-header">
@@ -220,6 +231,7 @@ function ProblemEditor({ problem, initialTrack, competition, tracks, isNew, onCr
           <FieldError>{formError}</FieldError>
         </form>
         <aside className="problem-editor-guide"><FilePlus2 size={19} /><strong>发布检查</strong><ul><li>题目目标与交付物明确</li><li>提交字段和评分项一致</li><li>环境、接口与资源预算已确认</li><li>程序评测器已通过运行验收</li></ul><p>将状态设为“正式发布”并保存后，题目会出现在公开赛道页面。只收材料的题目可不配置程序评测器。</p></aside>
+      </div>
       </div>
     </AppShell>
     <ConfirmDialog open={templateConfirmOpen} title="载入赛题模板？" confirmLabel="载入模板" description="将替换当前表单的题面、材料要求、评分与运行配置，并设为草稿。保存后才会写入平台。" onCancel={() => setTemplateConfirmOpen(false)} onConfirm={applyTemplate} />

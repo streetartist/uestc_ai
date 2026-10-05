@@ -165,10 +165,15 @@ def create_team():
         return registration_deadline_response()
     if Team.query.filter_by(competition_id=competition.id, name=data["name"]).first():
         return jsonify({"error": "team name already exists"}), 409
+    from ..ai_quotas import lock_competition, provision_team_quotas
+    lock_competition(competition.id)
     team = Team(competition=competition, name=data["name"].strip(), invite_code=secrets.token_hex(4).upper(), captain_id=user.id)
     team.members.append(TeamMember(user=user))
     db.session.add(team)
     db.session.flush()
+    provision_team_quotas(team)
+    from ..compute import provision_compute
+    provision_compute(team)
     audit("team.created", "team", team.id)
     db.session.commit()
     return jsonify(team.to_dict(include_members=True)), 201
@@ -211,6 +216,18 @@ def delete_team(team_id: str):
     if team.captain_id != user.id:
         return jsonify({"error": "team captain required"}), 403
     if Registration.query.filter_by(team_id=team.id).first() or Submission.query.filter_by(team_id=team.id).first():
+        return jsonify({"error": "team has participation records"}), 409
+    from ..ai_models import AIGrant
+    from ..ai_quotas import lock_competition, remove_unused_grants
+    lock_competition(team.competition_id)
+    from ..ai_quotas import lock_problem
+    from ..compute_models import ComputeGrant
+    for (problem_id,) in db.session.query(ComputeGrant.problem_id).filter_by(team_id=team.id).order_by(ComputeGrant.problem_id).all():
+        lock_problem(problem_id)
+    from ..compute import remove_unused_compute
+    if not remove_unused_compute(team_id=team.id):
+        return jsonify({"error": "team has compute records"}), 409
+    if not remove_unused_grants(AIGrant.team_id == team.id):
         return jsonify({"error": "team has participation records"}), 409
     audit("team.deleted", "team", team.id, {"name": team.name})
     db.session.delete(team)

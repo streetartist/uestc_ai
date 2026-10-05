@@ -9,7 +9,8 @@ from flask import Blueprint, current_app, jsonify, request, send_from_directory
 from sqlalchemy import func
 from ..extensions import db
 from ..models import Competition, EvaluationRun, Problem, Registration, Review, Score, ScoreBatch, StagedSubmissionAsset, Submission, SubmissionAsset, SubmissionVersion, Team, Track, new_id
-from ..evaluation import adapters
+from ..evaluation import adapters, evaluation_budget
+from ..ai_quotas import lock_problem
 from ..submission_schema import validate_submission_materials
 from ..reviewing import combined_score, effective_reviewer_weights, external_weight_percent, is_review_locked, latest_external_score, review_score
 from ..security import current_user, require_user, team_member
@@ -224,7 +225,14 @@ def submit_work():
     ).first()
     if not registration:
         return jsonify({"error": "team is not registered for this track"}), 403
-    submission = Submission.query.filter_by(problem_id=problem.id, team_id=team.id).first()
+    # Serialize quota reads, first submissions and overwrites with policy saves.
+    lock_problem(problem.id)
+    db.session.refresh(problem)
+    submission = Submission.query.filter_by(problem_id=problem.id, team_id=team.id).populate_existing().first()
+    budget = evaluation_budget(problem, submission)
+    if status == "submitted" and budget["enabled"] and budget["remaining_runs"] == 0:
+        db.session.rollback()
+        return jsonify({"error": "evaluation test limit reached", "evaluation_budget": budget}), 429
     retained, retained_error = retained_assets(data, submission)
     if retained_error:
         return retained_error
@@ -270,6 +278,10 @@ def submit_work():
             db.session.rollback()
             return jsonify({"error": "evaluation adapter is no longer registered"}), 409
         extension = adapter["submission"]["extension"]
+        # Overwrite removes old assets; reload the relationship before checking
+        # the new package so an uploaded replacement isn't counted twice.
+        db.session.flush()
+        db.session.expire(version, ["assets"])
         packages = [asset for asset in version.assets if asset.original_name.lower().endswith("." + extension)]
         if len(packages) != 1:
             db.session.rollback()
@@ -284,6 +296,7 @@ def submit_work():
             },
             status="queued",
         ))
+        submission.evaluation_runs_used += 1
     audit("submission.overwritten", "submission", submission.id, {
         "status": version.status,
         "asset_count": len(staged) + len(retained),
@@ -365,11 +378,15 @@ def delete_draft_submission(submission_id: str):
         return jsonify({"error": "team membership required"}), 403
     if deadline_passed(submission.problem.track.competition):
         return deadline_response()
+    lock_problem(submission.problem_id)
+    submission = db.session.get(Submission, submission_id, populate_existing=True)
+    if not submission:
+        return jsonify({"error": "submission not found"}), 404
     version_ids = [version.id for version in submission.versions]
     has_review = Review.query.filter(Review.submission_version_id.in_(version_ids)).first() if version_ids else None
     has_score = Score.query.filter(Score.submission_version_id.in_(version_ids)).first() if version_ids else None
     has_run = EvaluationRun.query.filter(EvaluationRun.submission_version_id.in_(version_ids)).first() if version_ids else None
-    if submission.status != "draft" or any(version.status != "draft" for version in submission.versions) or has_review or has_score or has_run:
+    if submission.status != "draft" or any(version.status != "draft" for version in submission.versions) or has_review or has_score or has_run or submission.evaluation_runs_used:
         return jsonify({"error": "only unreviewed drafts can be deleted"}), 409
     storage_names = [asset.storage_name for version in submission.versions for asset in version.assets]
     audit("submission.deleted", "submission", submission.id, {"title": submission.title})

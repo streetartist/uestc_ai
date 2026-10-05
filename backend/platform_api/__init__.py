@@ -15,6 +15,8 @@ from .routes.manage import manage_bp
 from .routes.markdown_assets import markdown_assets_bp
 from .routes.submissions import submissions_bp
 from .routes.evaluations import evaluations_bp
+from .routes.ai import ai_bp
+from .routes.compute import compute_bp
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -52,6 +54,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         EVALUATION_ENABLED_ADAPTERS=os.environ.get("EVALUATION_ENABLED_ADAPTERS", ""),
         EVALUATION_API_URL=os.environ.get("EVALUATION_API_URL", ""),
         EVALUATION_API_KEY=os.environ.get("EVALUATION_API_KEY", ""),
+        AI_GATEWAY_ENCRYPTION_KEY=os.environ.get("AI_GATEWAY_ENCRYPTION_KEY", ""),
+        AI_GATEWAY_ALLOW_LOCAL_HTTP=os.environ.get("AI_GATEWAY_ALLOW_LOCAL_HTTP", "0") == "1",
+        AI_GATEWAY_TIMEOUT_SECONDS=120,
+        AI_GATEWAY_MAX_REQUEST_BYTES=4 * 1024 * 1024,
+        AI_GATEWAY_MAX_RESPONSE_BYTES=16 * 1024 * 1024,
+        COMPUTE_ALLOW_LOCAL_HTTP=os.environ.get("COMPUTE_ALLOW_LOCAL_HTTP", "0") == "1",
         INITIAL_ADMIN_EMAIL=os.environ.get("INITIAL_ADMIN_EMAIL", "admin@uestcai.top"),
         INITIAL_ADMIN_PASSWORD=os.environ.get("INITIAL_ADMIN_PASSWORD", ""),
         INITIAL_REVIEWER_EMAIL=os.environ.get("INITIAL_REVIEWER_EMAIL", "reviewer@uestc.ai"),
@@ -92,6 +100,8 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(competitions_bp, url_prefix="/api")
     app.register_blueprint(submissions_bp, url_prefix="/api")
     app.register_blueprint(evaluations_bp, url_prefix="/api")
+    app.register_blueprint(ai_bp, url_prefix="/api")
+    app.register_blueprint(compute_bp, url_prefix="/api")
     app.register_blueprint(content_bp, url_prefix="/api")
     app.register_blueprint(manage_bp, url_prefix="/api")
     app.register_blueprint(markdown_assets_bp, url_prefix="/api")

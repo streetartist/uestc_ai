@@ -174,7 +174,16 @@ def evaluate(config: dict, scenarios: list[dict], environment_factory, socket_pa
 def create_minedojo_environment(scene: dict):
     import minedojo
 
-    return minedojo.make(task_id=scene["task_id"], image_size=(160, 256), world_seed=scene["world_seed"])
+    options = {}
+    # These are trusted organizer-owned scenario conditions, never contestant
+    # config. They also allow controlled acceptance cases with known outcomes.
+    if "initial_inventory" in scene:
+        from minedojo.sim import InventoryItem
+        options["initial_inventory"] = [InventoryItem(**item) for item in scene["initial_inventory"]]
+    for key in ("generate_world_type", "start_time", "allow_mob_spawn", "allow_time_passage"):
+        if key in scene:
+            options[key] = scene[key]
+    return minedojo.make(task_id=scene["task_id"], image_size=(160, 256), world_seed=scene["world_seed"], **options)
 
 
 def main() -> None:

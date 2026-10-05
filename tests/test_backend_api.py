@@ -437,6 +437,7 @@ class PlatformApiTestCase(unittest.TestCase):
             if command[:3] == ["docker", "rm", "-f"]:
                 self.assertTrue(command[3].startswith("evaluation-"))
                 return SimpleNamespace(returncode=0)
+            self.assertEqual(_kwargs["timeout"], 60)
             output_mount = next(command[index + 1] for index, value in enumerate(command[:-1]) if value == "--mount" and "dst=/output" in command[index + 1])
             output_dir = Path(output_mount.split("src=", 1)[1].split(",dst=", 1)[0])
             (output_dir / "result.json").write_text('{"episodes": [{"task_success": 100}]}', encoding="utf-8")
@@ -456,7 +457,8 @@ class PlatformApiTestCase(unittest.TestCase):
             if command[:3] == ["docker", "rm", "-f"]:
                 cleanup.append(command)
                 return SimpleNamespace(returncode=0)
-            raise evaluation_worker.subprocess.TimeoutExpired(command, 90)
+            self.assertEqual(_kwargs["timeout"], 60)
+            raise evaluation_worker.subprocess.TimeoutExpired(command, 60)
 
         with patch.object(evaluation_worker, "download"), patch.object(evaluation_worker.subprocess, "run", side_effect=timed_out), patch.object(evaluation_worker, "heartbeat"):
             with self.assertRaises(evaluation_worker.subprocess.TimeoutExpired):

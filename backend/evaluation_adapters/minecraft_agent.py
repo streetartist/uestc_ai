@@ -59,13 +59,13 @@ def load_agent(package: Path, directory: Path):
     return agent
 
 
-def connect(path: str) -> socket.socket:
+def connect(path: str, timeout_seconds: float = 300) -> socket.socket:
     deadline = time.monotonic() + 120
     while True:
         sock = socket.socket(socket.AF_UNIX)
         try:
             sock.connect(path)
-            sock.settimeout(300)
+            sock.settimeout(timeout_seconds)
             return sock
         except (FileNotFoundError, ConnectionRefusedError):
             sock.close()
@@ -93,7 +93,8 @@ def run(agent, channel: JsonChannel) -> None:
 
 def main() -> None:
     agent = load_agent(Path("/input/package.zip"), Path("/tmp/agent"))
-    with connect(os.environ.get("EVALUATION_SOCKET", "/ipc/agent.sock")) as sock:
+    with connect(os.environ.get("EVALUATION_SOCKET", "/ipc/agent.sock"),
+                 float(os.environ.get("EVALUATION_SOCKET_TIMEOUT", "300"))) as sock:
         run(agent, JsonChannel(sock))
 
 

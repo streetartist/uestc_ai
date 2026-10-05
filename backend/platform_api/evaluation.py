@@ -103,8 +103,11 @@ def catalog() -> list[dict]:
 def validate_evaluation_config(value: object) -> dict:
     if value in (None, {}):
         return {}
-    if not isinstance(value, dict) or set(value) != {"adapter", "task", "resources", "api", "metrics"}:
+    required = {"adapter", "task", "resources", "api", "metrics"}
+    if not isinstance(value, dict) or not required <= set(value) or set(value) - required - {"max_team_runs"}:
         raise ValueError("evaluation config has invalid fields")
+    if "max_team_runs" in value and (type(value["max_team_runs"]) is not int or not 1 <= value["max_team_runs"] <= 1000):
+        raise ValueError("max_team_runs must be between 1 and 1000")
     if not isinstance(value["adapter"], str) or not isinstance(value["task"], str):
         raise ValueError("unknown evaluation adapter or task")
     adapter = adapters().get(value["adapter"])
@@ -133,6 +136,26 @@ def validate_evaluation_config(value: object) -> dict:
     if value["adapter"] == "minecraft-agent-v1" and value["task"] == "open-world" and "api_calls" in metrics:
         raise ValueError("Minecraft API calls are available per run, not per episode")
     return deepcopy(value)
+
+
+def fixed_evaluation_rules(config):
+    """Only budgets may change after submission; queued jobs keep their snapshot."""
+    fixed = deepcopy(config or {})
+    fixed.pop("max_team_runs", None)
+    if "resources" in fixed:
+        fixed["resources"].pop("time_seconds", None)
+    return fixed
+
+
+def evaluation_budget(problem, submission=None):
+    config = problem.evaluation_config or {}
+    used = submission.evaluation_runs_used if submission else 0
+    limit = config.get("max_team_runs")
+    return {
+        "enabled": bool(config), "time_seconds": config.get("resources", {}).get("time_seconds"),
+        "max_team_runs": limit, "used_runs": used,
+        "remaining_runs": max(0, limit - used) if limit is not None else None,
+    }
 
 
 def validate_metrics(config: dict, values: object) -> dict[str, float]:

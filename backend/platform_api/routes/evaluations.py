@@ -12,9 +12,9 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request, send_from_directory
 from sqlalchemy import and_, or_, update
 
-from ..evaluation import catalog, validate_metrics
+from ..evaluation import catalog, evaluation_budget, validate_metrics
 from ..extensions import db
-from ..models import EvaluationRun, SubmissionAsset, SubmissionVersion, iso
+from ..models import EvaluationRun, Problem, Submission, SubmissionAsset, SubmissionVersion, Team, iso
 from ..security import current_user, hash_token, require_user, team_member
 from ..utils import audit
 
@@ -57,6 +57,27 @@ def leased_run(run_id: str):
 @require_user("admin", "organizer")
 def list_adapters():
     return jsonify(catalog())
+
+
+@evaluations_bp.get("/problems/<problem_id>/evaluation-budget")
+@require_user()
+def team_budget(problem_id):
+    team_id = request.args.get("team_id")
+    user = current_user()
+    if not team_id:
+        return jsonify({"error": "team_id is required"}), 400
+    if user.role not in {"admin", "organizer"} and not team_member(team_id, user.id):
+        return jsonify({"error": "team membership required"}), 403
+    problem = db.session.get(Problem, problem_id)
+    team = db.session.get(Team, team_id)
+    if not problem or not team:
+        return jsonify({"error": "problem or team not found"}), 404
+    if team.competition_id != problem.track.competition_id:
+        return jsonify({"error": "team belongs to a different competition"}), 400
+    submission = Submission.query.filter_by(problem_id=problem.id, team_id=team.id).first()
+    response = jsonify({"problem_id": problem.id, "team_id": team.id, **evaluation_budget(problem, submission)})
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @evaluations_bp.get("/evaluation-runs/<run_id>")
@@ -108,7 +129,7 @@ def claim_run():
         if run.attempts >= MAX_ATTEMPTS:
             changed = db.session.execute(update(EvaluationRun).where(EvaluationRun.id == run.id, claimable).values(
                 status="failed", error="worker lease expired", lease_hash=None, api_token_hash=None, finished_at=now,
-            ))
+            ).execution_options(synchronize_session=False))
             db.session.commit()
             if changed.rowcount:
                 continue
@@ -118,7 +139,7 @@ def claim_run():
             status="running", attempts=EvaluationRun.attempts + 1,
             lease_hash=hash_token(token), api_token_hash=hash_token(api_token),
             lease_expires_at=now + timedelta(seconds=LEASE_SECONDS), started_at=now,
-        ))
+        ).execution_options(synchronize_session=False))
         db.session.commit()
         if not changed.rowcount:
             continue
@@ -160,6 +181,20 @@ def proxy_api(run_id: str):
     if not run or not token or not run.api_token_hash or not hmac.compare_digest(run.api_token_hash, hash_token(token)) or run.status != "running" or not run.lease_expires_at or aware(run.lease_expires_at) <= now_utc():
         return jsonify({"error": "evaluation API token invalid or expired"}), 403
     policy = run.config_snapshot["api"]
+    # Reuse team quota and usage records for every adapter, including Minecraft.
+    from ..ai_models import AIGrant
+    from ..ai_gateway import GatewayError, error_response, proxy
+    team_id = run.submission_version.submission.team_id
+    grant = AIGrant.query.filter_by(team_id=team_id, problem_id=run.problem_id).first()
+    if grant is None:
+        grant = AIGrant.query.filter_by(team_id=team_id, problem_id=None).first()
+    if grant:
+        if not policy["enabled"]:
+            return jsonify({"error": "evaluation API is unavailable"}), 503
+        try:
+            return proxy(grant, request.get_json(silent=True), run=run)
+        except GatewayError as error:
+            return error_response(error)
     upstream = current_app.config["EVALUATION_API_URL"]
     key = current_app.config["EVALUATION_API_KEY"]
     if not policy["enabled"] or not upstream or not key or not upstream.startswith("https://"):

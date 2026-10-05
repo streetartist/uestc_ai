@@ -21,6 +21,7 @@ export function EvaluationMetrics({ config, run }: { config?: EvaluationConfig; 
   const definitions = Object.fromEntries((run?.metric_definitions ?? []).map((metric) => [metric.key, metric]));
   return <section className="evaluation-results" aria-label="运行指标">
     <header><strong>运行指标</strong><span>{run ? statusLabels[run.status] : "等待提交"}</span></header>
+    {run && <p>本次测试时长上限：{run.time_seconds ?? config.resources.time_seconds} 秒（全部场景共用）</p>}
     {run?.status === "completed" ? <>
       <h4>跨场景平均</h4>
       <dl>{config.metrics.map((key) => <div key={key}><dt>{definitions[key]?.label ?? key}</dt><dd>{metricValue(run.metrics[key], definitions[key]?.unit)}</dd></div>)}</dl>
@@ -36,7 +37,7 @@ export function EvaluationMetrics({ config, run }: { config?: EvaluationConfig; 
         })}
       </div> : null}
     </> :
-      <p>{run?.status === "failed" ? "本次运行未能生成指标。" : "提交的程序运行后，这里会展示观测结果。"}</p>}
+      <p>{run?.status === "failed" ? run.error === "evaluation time limit exceeded" ? "本次测试已超时，程序已终止，未能生成完整指标。" : "本次运行未能生成指标。" : "提交的程序运行后，这里会展示观测结果。"}</p>}
     {config.api?.enabled && run && <p>本次运行 API 调用：{run.api_calls_used ?? 0} / {config.api.max_calls}</p>}
     <small>指标供作品展示与评委参考，不自动计入评审成绩。</small>
   </section>;

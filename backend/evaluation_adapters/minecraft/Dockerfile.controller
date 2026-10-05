@@ -1,6 +1,6 @@
 FROM eclipse-temurin:8-jdk-focal AS java-runtime
 
-FROM python:3.9-bookworm
+FROM python:3.9-bookworm AS controller-runtime
 
 COPY --from=java-runtime /opt/java/openjdk /opt/java/openjdk
 ENV JAVA_HOME=/opt/java/openjdk PATH=/opt/java/openjdk/bin:$PATH
@@ -13,7 +13,15 @@ RUN python3 -m pip install --no-cache-dir 'pip==23.2.1' 'setuptools==65.5.0' 'wh
     && python3 -m pip install --no-cache-dir 'minedojo==0.1' 'numpy>=1.21,<2' 'Pillow>=9,<12'
 COPY backend/evaluation_adapters /runner/evaluation_adapters
 ENV PYTHONPATH=/runner MINEDOJO_HEADLESS=1
+RUN python3 /runner/evaluation_adapters/minecraft/prepare_build.py
 
-RUN xvfb-run -a python3 -c "import minedojo; env=minedojo.make(task_id='open-ended', image_size=(160,256), world_seed=1042); env.reset(); env.close()"
+FROM controller-runtime AS controller
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libxtst6 libxi6 libxrender1 libglu1-mesa libxcursor1 libxrandr2 libxxf86vm1 libasound2 libpulse0 x11-xserver-utils \
+    && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,id=uestc-minecraft-gradle-v1,target=/var/cache/minedojo,sharing=locked \
+    set -e; mkdir -p /root/.gradle; cp -a /var/cache/minedojo/. /root/.gradle/; \
+    trap 'cp -a /root/.gradle/. /var/cache/minedojo/' EXIT; \
+    MINEDOJO_DEBUG_LOG=1 xvfb-run -a python3 -u -c "import minedojo; env=minedojo.make(task_id='open-ended', image_size=(160,256), world_seed=1042); env.reset(); env.close()"
 
 CMD ["xvfb-run", "-a", "python3", "-m", "evaluation_adapters.minecraft_runner"]

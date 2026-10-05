@@ -10,7 +10,7 @@ import { useSession } from "@/app/components/SessionProvider";
 import { useToast } from "@/app/components/ToastProvider";
 import { FieldError, PageError, PageLoading, StatusPill } from "@/app/components/ui";
 import { api, assetUrl, formatApiError, jsonBody } from "@/app/lib/api";
-import type { ProblemDetail, Registration, StagedSubmissionAsset, Submission, Team } from "@/app/lib/domain";
+import type { EvaluationBudget, ProblemDetail, Registration, StagedSubmissionAsset, Submission, Team } from "@/app/lib/domain";
 import { validateForm } from "@/app/lib/formValidation";
 import { formatBeijing } from "@/app/lib/time";
 import { useApiResource } from "@/app/lib/useApiResource";
@@ -70,6 +70,13 @@ export default function SubmitPage() {
   const eligibleTeams = useMemo(() => (teams ?? []).filter((team) => team.competition_id === problem?.competition.id), [teams, problem]);
   const draftVersion = draftSubmission?.versions?.[draftSubmission.versions.length - 1];
   const teamId = chosenTeamId ?? draftSubmission?.team_id ?? eligibleTeams[0]?.id ?? "";
+  const hasEvaluation = Boolean(problem?.evaluation_config?.adapter);
+  const { data: budgetData, loading: budgetLoading, error: budgetError, reload: reloadBudget } = useApiResource<EvaluationBudget>(
+    user && problem?.id && teamId && hasEvaluation ? `/problems/${problem.id}/evaluation-budget?team_id=${encodeURIComponent(teamId)}` : null,
+  );
+  const budget = budgetData?.team_id === teamId && budgetData?.problem_id === problem?.id ? budgetData : null;
+  const testLimitReached = hasEvaluation && budget?.remaining_runs === 0;
+  const budgetUnavailable = hasEvaluation && (!budget || budgetLoading || Boolean(budgetError));
   const title = editedTitle ?? draftSubmission?.title ?? problem?.title ?? "";
   const readme = editedReadme ?? draftVersion?.readme_md ?? readmeTemplate(problem);
   const fields = editedFields ?? draftVersion?.fields ?? {};
@@ -147,6 +154,10 @@ export default function SubmitPage() {
     const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
     const mode = submitter?.value === "submitted" ? "submitted" : "draft";
     setSubmitError("");
+    if (mode === "submitted" && (testLimitReached || budgetUnavailable)) {
+      setSubmitError(testLimitReached ? "本队在本题的指标测试次数已用尽，可继续保存草稿。" : "请先刷新并确认指标测试额度。" );
+      return;
+    }
     if (assetsIncomplete) {
       setAssetError(pendingAssets.some((item) => item.status === "uploading") ? "请等待附件上传完成后再保存。" : "有附件上传失败，请重试或移除后再保存。");
       return;
@@ -169,7 +180,7 @@ export default function SubmitPage() {
       toast.success(mode === "draft" ? "草稿已保存；作品已退出公开展示和评审" : "作品已正式提交并公开，已进入评审流程");
       router.push(mode === "submitted" ? `/works/${result.id}` : "/dashboard");
       router.refresh();
-    } catch (requestError) { setSubmitError(formatApiError(requestError)); }
+    } catch (requestError) { setSubmitError(formatApiError(requestError)); void reloadBudget(); }
     finally { setSubmittingMode(null); }
   }
 
@@ -187,6 +198,10 @@ export default function SubmitPage() {
           {!eligibleTeams.length ? <div className="form-gate"><strong>先创建参赛队伍</strong><p>当前赛事下还没有你的队伍。</p><Link className="outline-button" href="/dashboard">前往工作台 <ArrowRight size={15} /></Link></div> : <>
             <fieldset className="submission-edit-fields" disabled={deadlinePassed}>
             <label className="form-field"><span>参赛队伍</span><select value={teamId} onChange={(event) => setChosenTeamId(event.target.value)} disabled={Boolean(draftSubmission)}>{eligibleTeams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+            {hasEvaluation && <section className="form-gate"><div><strong>本题指标测试额度</strong>
+              {budget && <><p>每次测试最长 {budget.time_seconds} 秒（全部场景共用）；本队已用 {budget.used_runs} 次，{budget.max_team_runs === null ? "次数不限" : `最多 ${budget.max_team_runs} 次，剩余 ${budget.remaining_runs} 次`}。</p><small>每次正式提交触发一次测试，失败和超时计入次数；保存草稿不扣次数。{testLimitReached && "次数已用尽，请联系组织方调整后再提交。"}</small></>}
+              {budgetLoading && <p>正在读取测试额度…</p>}{budgetError && <p role="alert">{budgetError}</p>}
+            </div><button type="button" className="outline-button" disabled={budgetLoading} onClick={() => void reloadBudget()}>刷新额度</button></section>}
             {!selectedRegistration && <div className="form-gate warm"><TicketCheck size={18} /><div><strong>该队伍尚未报名本赛道</strong><p>报名后即可保存草稿或正式提交。</p></div><button className="outline-button" type="button" onClick={registerTrack}>报名 {problem.track.name}</button></div>}
             <label className="form-field"><span>作品名称</span><input value={title} onChange={(event) => setEditedTitle(event.target.value)} required /></label>
             <div className="dynamic-fields">{(problem.submission_schema.fields ?? []).map((field) => {
@@ -198,7 +213,7 @@ export default function SubmitPage() {
             <MarkdownEditor label="作品 README" name="submission-readme" value={readme} onChange={setEditedReadme} required={problem.submission_schema.readme_required ?? false} height={560} help="支持 GitHub Flavored Markdown；可粘贴图片或插入 8 MB 以内的附件。" />
             {Boolean(problem.submission_schema.attachments?.length) && <section className="form-gate"><div><strong>正式提交所需附件</strong>{problem.submission_schema.attachments?.map((item) => <p key={item.key}>{item.label}：{item.extensions.map((ext) => `.${ext}`).join(" / ")}，{item.min_count === item.max_count ? item.min_count : `${item.min_count}—${item.max_count}`} 个</p>)}<small>可先保存不完整的草稿；正式提交会检查全部材料。</small></div></section>}
             <div className="form-field file-field"><span>{problem.evaluation_config?.adapter ? "附件（正式提交需上传一个 .zip 程序包）" : "附件（可选）"}</span>{draftVersion?.assets?.length ? <div className="draft-asset-list"><small>已有附件默认保留到本次新版本；可移除，或移除后上传替换文件</small>{draftVersion.assets.map((asset) => { const retained = retainedIds.includes(asset.id); return <div className={retained ? "" : "removed"} key={asset.id}><a href={assetUrl(asset.id)}><FileText size={14} /><span><strong>{asset.original_name}</strong><small>{formatBytes(asset.size)}</small></span><Download size={13} /></a><span className={`asset-upload-state ${retained ? "done" : "error"}`}>{retained ? "将保留" : "已移除"}</span><button type="button" disabled={Boolean(submittingMode)} title={retained ? `从本次版本移除 ${asset.original_name}` : `恢复 ${asset.original_name}`} aria-label={retained ? `从本次版本移除 ${asset.original_name}` : `恢复 ${asset.original_name}`} onClick={() => setRetainedAssetIds(retained ? retainedIds.filter((id) => id !== asset.id) : [...retainedIds, asset.id])}>{retained ? <X size={14} /> : <RotateCcw size={14} />}</button></div>; })}</div> : null}<span className={`file-input ${submittingMode ? "disabled" : ""}`}><FileUp size={17} /><input type="file" multiple disabled={Boolean(submittingMode)} accept=".md,.pdf,.csv,.json,.zip,.tar,.gz,.png,.jpg,.jpeg,.webp,.mp4" aria-label="选择作品附件" onChange={(event) => { chooseAssets(event.target.files); event.target.value = ""; }} /><span><strong>{pendingAssets.length ? `继续添加附件（已上传 ${pendingAssets.filter((item) => item.status === "done").length}/${pendingAssets.length}）` : "选择并上传附件"}</strong><small>选择后立即上传；支持图片、文档、压缩包和视频</small></span></span>{pendingAssets.length > 0 && <div className="pending-asset-list">{pendingAssets.map((item) => <div key={item.id}><FileText size={15} /><span><strong>{item.file.name}</strong><small>{formatBytes(item.file.size)}{item.error ? ` · ${item.error}` : ""}</small></span><span className={`asset-upload-state ${item.status}`}>{item.status === "uploading" ? <><LoaderCircle className="spin" size={13} />上传中</> : item.status === "done" ? <><Check size={13} />已上传</> : <><AlertCircle size={13} />失败</>}</span><span className="asset-row-actions">{item.status === "error" && <button type="button" title={`重试上传 ${item.file.name}`} aria-label={`重试上传 ${item.file.name}`} onClick={() => void stageAsset(item)}><RotateCcw size={14} /></button>}<button type="button" disabled={item.status === "uploading"} title={`移除 ${item.file.name}`} aria-label={`移除 ${item.file.name}`} onClick={() => void removeAsset(item)}><X size={14} /></button></span></div>)}</div>}{assetError && <span className="attachment-error" role="alert">{assetError}</span>}<small>单个附件不超过 20 MB；{problem.evaluation_config?.adapter ? "程序包将进入独立的评测环境运行。" : "平台只存储与展示附件。"} </small></div>
-            <div className="submission-decision"><div><strong>选择当前稿状态</strong><span>保存草稿会退出公开展示与评审；正式提交会立即公开并进入评审。</span></div><div className="submission-actions"><button className="outline-button" type="submit" name="submission-status" value="draft" disabled={Boolean(submittingMode) || !selectedRegistration || assetsIncomplete || deadlinePassed}><Save size={15} />{submittingMode === "draft" ? "正在保存草稿" : "保存为草稿"}</button><button className="primary-button" type="submit" name="submission-status" value="submitted" disabled={Boolean(submittingMode) || !selectedRegistration || assetsIncomplete || deadlinePassed}><Send size={15} />{submittingMode === "submitted" ? "正在正式提交" : "正式提交"}<ArrowRight size={15} /></button></div></div>
+            <div className="submission-decision"><div><strong>选择当前稿状态</strong><span>保存草稿会退出公开展示与评审；正式提交会立即公开并进入评审。</span></div><div className="submission-actions"><button className="outline-button" type="submit" name="submission-status" value="draft" disabled={Boolean(submittingMode) || !selectedRegistration || assetsIncomplete || deadlinePassed}><Save size={15} />{submittingMode === "draft" ? "正在保存草稿" : "保存为草稿"}</button><button className="primary-button" type="submit" name="submission-status" value="submitted" disabled={Boolean(submittingMode) || !selectedRegistration || assetsIncomplete || deadlinePassed || testLimitReached || budgetUnavailable}><Send size={15} />{submittingMode === "submitted" ? "正在正式提交" : "正式提交"}<ArrowRight size={15} /></button></div></div>
             <FieldError>{submitError}</FieldError>
             </fieldset>
           </>}

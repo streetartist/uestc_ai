@@ -163,6 +163,8 @@ class Problem(TimestampMixin, db.Model):
     track = db.relationship("Track", back_populates="problems")
     submissions = db.relationship("Submission", back_populates="problem", cascade="all, delete-orphan")
     evaluation_runs = db.relationship("EvaluationRun", back_populates="problem", cascade="all, delete-orphan")
+    ai_quota_policy = db.relationship("AIProblemQuota", back_populates="problem", uselist=False, cascade="all, delete-orphan")
+    compute_policy = db.relationship("ComputePolicy", back_populates="problem", uselist=False, cascade="all, delete-orphan")
 
     def to_dict(self, include_statement=False):
         data = {"id": self.id, "track_id": self.track_id, "code": self.code, "slug": self.slug, "title": self.title, "summary": self.summary, "status": self.status, "difficulty": self.difficulty, "compute_note": self.compute_note, "source_url": self.source_url, "submission_schema": self.submission_schema, "judging_schema": self.judging_schema, "scoring_config": self.scoring_config, "evaluation_config": self.evaluation_config}
@@ -220,6 +222,7 @@ class Submission(TimestampMixin, db.Model):
     title = db.Column(db.String(180), nullable=False)
     status = db.Column(db.String(24), nullable=False, default="draft", index=True)
     current_version = db.Column(db.Integer, nullable=False, default=0)
+    evaluation_runs_used = db.Column(db.Integer, nullable=False, default=0, server_default="0")
     problem = db.relationship("Problem", back_populates="submissions")
     team = db.relationship("Team", back_populates="submissions")
     versions = db.relationship("SubmissionVersion", back_populates="submission", cascade="all, delete-orphan", order_by="SubmissionVersion.version")
@@ -412,6 +415,7 @@ class EvaluationRun(TimestampMixin, db.Model):
             "metrics": self.metrics, "episodes": self.episodes, "error": self.error,
             "metric_definitions": self.config_snapshot.get("metric_definitions", []),
             "api_calls_used": self.api_calls_used,
+            "time_seconds": self.config_snapshot["resources"]["time_seconds"],
             "created_at": iso(self.created_at), "started_at": iso(self.started_at),
             "finished_at": iso(self.finished_at),
         }

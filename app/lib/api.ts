@@ -46,6 +46,10 @@ export function formatApiError(error: unknown): string {
   }
   if (error instanceof ApiError) {
     const translations: Record<string, string> = {
+      "team has compute records": "队伍已有算力实例或使用记录，请保留队伍以便核对。",
+      "track has compute records": "赛道已有算力实例或使用记录，请归档以保留记录。",
+      "problem has compute records": "赛题已有算力实例或使用记录，请归档以保留记录。",
+      "problem has API records": "赛题已有 API 密钥或用量记录，请归档以保留记录。",
       "authentication required": "请先登录后继续。",
       "insufficient permissions": "当前账户没有执行此操作的权限。",
       "team membership required": "只有队伍成员可以执行此操作。",
@@ -101,6 +105,8 @@ export function formatApiError(error: unknown): string {
       "submission version is not formally submitted": "CSV 中包含尚未正式提交的作品版本。",
       "submission version belongs to a different problem": "CSV 中包含其他赛题的作品版本。",
       "score batch must contain one problem": "一个成绩批次只能包含同一道赛题。",
+      "evaluation test limit reached": "本队在这道题的指标测试次数已用尽。可继续保存草稿，请联系组织方调整次数后再正式提交。",
+      "max_team_runs must be between 1 and 1000": "每队最多测试次数须为 1—1000 的整数。",
     };
     return translations[error.message] ?? error.message;
   }

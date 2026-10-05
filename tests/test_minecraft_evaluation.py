@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import io
 import socket
 import sys
 import tempfile
@@ -19,6 +21,62 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from evaluation_adapters.minecraft_agent import load_agent, run as run_agent  # noqa: E402
 from evaluation_adapters.minecraft_protocol import JsonChannel  # noqa: E402
 from evaluation_adapters.minecraft_runner import evaluate  # noqa: E402
+from evaluation_adapters.minecraft.prepare_assets import prepare_asset  # noqa: E402
+
+
+class MinecraftAssetTests(unittest.TestCase):
+    def test_worker_download_resolves_api_asset_url_without_duplicate_prefix(self):
+        from evaluation_worker import download
+
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "package.zip"
+            with patch("urllib.request.urlopen", return_value=io.BytesIO(b"package")) as request:
+                download("http://127.0.0.1:5000/api", "/api/evaluation-worker/runs/run/asset", "lease", destination)
+            self.assertEqual(request.call_args.args[0].full_url,
+                             "http://127.0.0.1:5000/api/evaluation-worker/runs/run/asset")
+            self.assertEqual(destination.read_bytes(), b"package")
+
+    def test_worker_download_rejects_cross_origin_lease_disclosure(self):
+        from evaluation_worker import download
+
+        with patch("urllib.request.urlopen") as request:
+            with self.assertRaisesRegex(RuntimeError, "API origin"):
+                download("http://127.0.0.1:5000/api", "https://example.com/asset", "lease", Path("unused.zip"))
+        request.assert_not_called()
+
+    def test_verified_cache_does_not_require_network(self):
+        data = b"minecraft asset"
+        digest = hashlib.sha1(data).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "objects" / digest[:2] / digest
+            target.parent.mkdir(parents=True)
+            target.write_bytes(data)
+            with patch("urllib.request.urlopen") as request:
+                prepare_asset({"hash": digest, "size": len(data)}, root)
+            request.assert_not_called()
+
+    def test_corrupt_cache_is_replaced_from_official_https_host(self):
+        data = b"minecraft asset"
+        digest = hashlib.sha1(data).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "objects" / digest[:2] / digest
+            target.parent.mkdir(parents=True)
+            target.write_bytes(b"corrupt")
+            with patch("urllib.request.urlopen", return_value=io.BytesIO(data)) as request:
+                prepare_asset({"hash": digest, "size": len(data)}, root)
+            self.assertTrue(request.call_args.args[0].startswith("https://resources.download.minecraft.net/"))
+            self.assertEqual(target.read_bytes(), data)
+
+    def test_asset_checksum_mismatch_fails_without_publishing_file(self):
+        digest = hashlib.sha1(b"expected").hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch("urllib.request.urlopen", return_value=io.BytesIO(b"wrong!!!")):
+                with self.assertRaisesRegex(ValueError, "checksum mismatch"):
+                    prepare_asset({"hash": digest, "size": 8}, root)
+            self.assertFalse((root / "objects" / digest[:2] / digest).exists())
 
 
 class FakeActionSpace:
@@ -180,7 +238,8 @@ class MinecraftEvaluationTests(unittest.TestCase):
 
             def start_controller(command, **kwargs):
                 commands.append(command)
-                (mount_src(command, "/ipc") / "agent.sock").touch()
+                if any("type=bind" in part and "dst=/ipc" in part for part in command):
+                    (mount_src(command, "/ipc") / "agent.sock").touch()
                 return SimpleNamespace(poll=lambda: None, wait=lambda timeout: 0, returncode=0)
 
             def run_docker(command, **kwargs):
@@ -201,12 +260,17 @@ class MinecraftEvaluationTests(unittest.TestCase):
                 result = evaluation_worker.execute("http://localhost:5000/api", job, {"minecraft-agent-v1": image},
                                                    "", "", "", agent_image, str(scenarios))
             self.assertEqual(result["episodes"], [{"task_success": 100}])
-            self.assertNotIn("/input/package.zip", " ".join(commands[0]))
-            self.assertNotIn("/output", " ".join(commands[1]))
-            self.assertIn("--network=none", commands[1])
-            self.assertIn("--read-only", commands[1])
-            self.assertNotIn("--read-only", commands[0])
-            self.assertNotIn("worker-lease", " ".join(commands[1]))
+            containers = [command for command in commands if command[:2] == ["docker", "run"]]
+            self.assertEqual(len(containers), 2)
+            self.assertNotIn("/input/package.zip", " ".join(containers[0]))
+            self.assertNotIn("/output", " ".join(containers[1]))
+            self.assertIn("--network=none", containers[1])
+            self.assertIn("--read-only", containers[1])
+            self.assertNotIn("--read-only", containers[0])
+            self.assertIn("--pids-limit=512", containers[0])
+            self.assertIn("--pids-limit=256", containers[1])
+            self.assertIn("EVALUATION_SOCKET_TIMEOUT=90", containers[1])
+            self.assertNotIn("worker-lease", " ".join(containers[1]))
 
     def test_open_world_rejects_per_episode_api_counter(self):
         from platform_api.evaluation import validate_evaluation_config
