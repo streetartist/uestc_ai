@@ -61,6 +61,7 @@ def main():
     parser.add_argument("--package", type=Path, help="Optional contestant ZIP instead of the acceptance agent")
     parser.add_argument("--time-limit", type=int, default=900, help="Total runtime budget across all scenes, in seconds")
     parser.add_argument("--expect-timeout", action="store_true", help="Run a deliberately slow agent and verify timeout, cleanup and quota")
+    parser.add_argument("--legacy-runtime", action="store_true", help="Use the previous worker environment mapping instead of an imported problem runtime")
     args = parser.parse_args()
     if not 30 <= args.time_limit <= 14400:
         parser.error("--time-limit must be between 30 and 14400")
@@ -107,7 +108,20 @@ def main():
         competition = checked(member.get("/api/competitions/paper-city-2027"))
         track = competition["tracks"][0]
         template = json.loads((ROOT / "backend/platform_api/templates/minecraft-open-world.json").read_text(encoding="utf-8"))["problem"]
-        problem = checked(admin.post(f"/api/tracks/{track['id']}/problems", json={**template, "status": "published", "evaluation_config": config}), 201)
+        if args.legacy_runtime:
+            problem = checked(admin.post(f"/api/tracks/{track['id']}/problems", json={**template, "status": "published", "evaluation_config": config}), 201)
+        else:
+            bundle = io.BytesIO()
+            with zipfile.ZipFile(bundle, "w") as archive:
+                archive.writestr("problem.json", json.dumps({"version": 1, "problem": template,
+                    "setup": {"evaluation_config": config}}, ensure_ascii=False))
+                archive.writestr("runtime.json", json.dumps({"image": controller, "agent_image": agent}))
+                archive.writestr("scenarios.json", json.dumps(scenes, ensure_ascii=False))
+            (output / "problem-package.zip").write_bytes(bundle.getvalue())
+            checked(admin.post("/api/manage/problem-packages/preview", data={"file": (io.BytesIO(bundle.getvalue()), "mc.zip")}, content_type="multipart/form-data"))
+            problem = checked(admin.post(f"/api/manage/tracks/{track['id']}/problem-packages", data={"file": (io.BytesIO(bundle.getvalue()), "mc.zip")}, content_type="multipart/form-data"), 201)
+            assert problem["status"] == "draft"
+            checked(admin.patch(f"/api/manage/problems/{problem['id']}", json={"status": "published"}))
         email = "mc-acceptance@std.uestc.edu.cn"
         code = checked(member.post("/api/auth/verification-codes", json={"email": email}), 202)["debug_code"]
         checked(member.post("/api/auth/register", json={"email": email, "name": "MC 验收", "password": "Acceptance123!", "verification_code": code}), 201)
@@ -119,11 +133,16 @@ def main():
         submission = checked(member.post("/api/submissions", json={"problem_id": problem["id"], "team_id": team["id"], "title": "真实 Minecraft 验收",
                              "readme_md": "# Docker 验收\n公开短场景，仅验证评测链路。", "fields": {"runtime_notes": "Acceptance agent"},
                              "status": "submitted", "staged_asset_ids": assets}), 201)
-        job = checked(worker.post("/api/evaluation-worker/claim", headers={"Authorization": "Bearer " + app.config["EVALUATION_WORKER_TOKEN"]}, json={"adapters": ["minecraft-agent-v1"], "gpu": False}))
+        job = checked(worker.post("/api/evaluation-worker/claim", headers={"Authorization": "Bearer " + app.config["EVALUATION_WORKER_TOKEN"]}, json={"adapters": ["minecraft-agent-v1"], "gpu": False, "managed_runtime": not args.legacy_runtime}))
+        if not args.legacy_runtime:
+            assert job["runtime"]["scenarios"] == scenes
+            assert "world_seed" not in json.dumps(checked(member.get(f"/api/evaluation-runs/{job['id']}")))
         print("Submitted and claimed; running real MineDojo controller + isolated ZIP agent", flush=True)
         started = time.monotonic()
         try:
-            result = execute(f"http://127.0.0.1:{server.server_port}/api", job, {"minecraft-agent-v1": controller}, "", "", "", agent, str(scene_path), str(output))
+            result = execute(f"http://127.0.0.1:{server.server_port}/api", job,
+                {"minecraft-agent-v1": controller} if args.legacy_runtime else {}, "", "", "",
+                agent if args.legacy_runtime else "", str(scene_path) if args.legacy_runtime else "", str(output))
         except subprocess.TimeoutExpired:
             failed = checked(worker.post(f"/api/evaluation-worker/runs/{job['id']}/complete", headers={"X-Evaluation-Lease": job["lease_token"]}, json={"status": "failed", "error": "evaluation time limit exceeded"}))
             if not args.expect_timeout:
@@ -161,7 +180,8 @@ def main():
             assert episodes[1]["metrics"]["distance_blocks"] > 0
             assert episodes[1]["metrics"]["mean_step_ms"] > 0
         report = {"status": "passed", "environment": "real MineDojo / Minecraft", "controller_image": controller,
-                  "agent_image": agent, "reviewer_metrics_verified": True, "evaluation": completed}
+                  "agent_image": agent, "reviewer_metrics_verified": True,
+                  "imported_problem_runtime": not args.legacy_runtime, "evaluation": completed}
         (output / "verification.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         print(json.dumps(report, ensure_ascii=False, indent=2), flush=True)
     finally:

@@ -12,6 +12,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -193,11 +194,17 @@ def execute_minecraft(base: str, job: dict, trusted_image: str, agent_image: str
 def execute(base: str, job: dict, images: dict[str, str], proxy_url: str, network: str, gpu_device: str,
             agent_image: str = "", scenarios_path: str = "", log_directory: str = ""):
     config = job["config"]
-    image = images.get(config["adapter"], "")
+    runtime = job.get("runtime")
+    image = runtime["image"] if runtime else images.get(config["adapter"], "")
     if not pinned_image(image):
         raise RuntimeError("adapter image is not configured with a pinned digest")
     resources = config["resources"]
     if config["adapter"] == "minecraft-agent-v1" and config["task"] == "open-world":
+        if runtime:
+            with tempfile.TemporaryDirectory(prefix="private-scenes-") as directory:
+                cases = Path(directory) / "scenarios.json"
+                cases.write_text(json.dumps(runtime["scenarios"]), encoding="utf-8")
+                return execute_minecraft(base, job, image, runtime.get("agent_image", ""), str(cases), proxy_url, network, log_directory)
         return execute_minecraft(base, job, image, agent_image, scenarios_path, proxy_url, network, log_directory)
     if config["api"]["enabled"] and (not proxy_url or not network):
         raise RuntimeError("API proxy URL and restricted Docker network are required")
@@ -211,6 +218,8 @@ def execute(base: str, job: dict, images: dict[str, str], proxy_url: str, networ
         output.mkdir(mode=0o777)
         download(base, job["asset_url"], job["lease_token"], inputs / "package.zip")
         (inputs / "config.json").write_text(json.dumps(config), encoding="utf-8")
+        if runtime:
+            (inputs / "scenarios.json").write_text(json.dumps(runtime.get("scenarios", [])), encoding="utf-8")
         command = [
             "docker", "run", "--rm", "--name", container_name, "--init", "--read-only", "--cap-drop=ALL",
             "--label", "uestc.evaluation_run=" + job["id"],
@@ -268,17 +277,39 @@ def main():
     gpu_device = os.environ.get("EVALUATION_GPU_DEVICE", "")
     agent_image = os.environ.get("EVALUATION_AGENT_IMAGE", "")
     scenarios_path = os.environ.get("EVALUATION_MINECRAFT_SCENARIOS", "")
-    supported = list(images)
+    supported = [adapter for adapter, image in images.items()
+                 if isinstance(adapter, str) and isinstance(image, str) and pinned_image(image)]
     if ("minecraft-agent-v1" in supported and
             (not pinned_image(agent_image)
              or not Path(scenarios_path).is_file())):
         supported.remove("minecraft-agent-v1")
-    if not supported:
-        raise SystemExit("No evaluation adapters have a configured runtime")
+    worker_id = os.environ.get("EVALUATION_WORKER_ID", "worker-" + uuid4().hex)
+    failures = 0
     while True:
-        job = request_json(base, "/evaluation-worker/claim", "POST", {
-            "adapters": supported, "gpu": bool(gpu_device),
-        }, {"Authorization": "Bearer " + token})
+        try:
+            subprocess.run(["docker", "info", "--format", "{{.ServerVersion}}"], timeout=10,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            managed = request_json(base, "/evaluation-worker/runtime-catalog", headers={"Authorization": "Bearer " + token})
+            available = sorted(set(supported + managed["adapters"]))
+            job = request_json(base, "/evaluation-worker/claim", "POST", {
+                "adapters": available, "gpu": bool(gpu_device), "managed_runtime": True,
+                "api_proxy": bool(proxy_url and network), "worker_id": worker_id,
+                "legacy_adapters": supported,
+            }, {"Authorization": "Bearer " + token}) if available else None
+            failures = 0
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+            if args.once:
+                raise SystemExit("Docker or evaluation API is unavailable") from None
+            failures += 1
+            delay = min(30, 2 ** min(failures, 5))
+            print(f"Docker or evaluation API unavailable; retrying in {delay}s", file=sys.stderr, flush=True)
+            threading.Event().wait(delay)
+            continue
+        if not available:
+            if args.once:
+                break
+            threading.Event().wait(5)
+            continue
         if job is None:
             if args.once:
                 break
@@ -290,9 +321,15 @@ def main():
             result = {"status": "failed", "error": "evaluation time limit exceeded"}
         except (OSError, ValueError, RuntimeError) as error:
             result = {"status": "failed", "error": str(error)[:400]}
-        request_json(base, f"/evaluation-worker/runs/{job['id']}/complete", "POST", result, {
-            "X-Evaluation-Lease": job["lease_token"],
-        })
+        try:
+            request_json(base, f"/evaluation-worker/runs/{job['id']}/complete", "POST", result, {
+                "X-Evaluation-Lease": job["lease_token"],
+            })
+        except (OSError, RuntimeError):
+            if args.once:
+                raise SystemExit("Evaluation completion could not be confirmed") from None
+            # Durable lease expiry handles recovery; do not charge another attempt.
+            print("Evaluation completion unconfirmed; platform lease will handle recovery", file=sys.stderr, flush=True)
         if args.once:
             break
 

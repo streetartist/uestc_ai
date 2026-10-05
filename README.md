@@ -137,6 +137,8 @@ worker/                      Cloudflare Worker 入口
 
 ## 参与贡献
 
+复杂赛题的 Docker 环境、AutoDL/SSH 资源、API 额度与整包导入流程见[赛题配置说明](backend/problem_packages.md)。
+
 提交 issue 或 Pull request 前请阅读 [贡献指南](CONTRIBUTING.md)。安全问题请按 [安全策略](SECURITY.md) 私密报告。
 
 ## 许可证

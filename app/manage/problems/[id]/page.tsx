@@ -5,8 +5,7 @@ import { FormEvent, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, FilePlus2, Save, Trash2 } from "lucide-react";
 import { AppShell } from "@/app/components/AppShell";
-import { ProblemAIQuotas } from "@/app/components/AIQuotaEditor";
-import { ComputeQuotaEditor } from "@/app/components/ComputeQuotaEditor";
+import { ProblemSetupEditor, ProblemPackageImport } from "@/app/components/ProblemSetupEditor";
 import { EvaluationConfigEditor } from "@/app/components/EvaluationConfigEditor";
 import { SubmissionSchemaEditor } from "@/app/components/SubmissionSchemaEditor";
 import { ConfirmDialog } from "@/app/components/ConfirmDialog";
@@ -60,7 +59,7 @@ export default function ManageProblemPage() {
   );
   const selected = tracks.find((item) => item.track.id === requestedTrackId) ?? tracks[0];
 
-  if (sessionLoading || loading) return <AppShell title="赛题编辑" eyebrow="WORKSPACE"><PageLoading /></AppShell>;
+  if (sessionLoading || (loading && !catalog)) return <AppShell title="赛题编辑" eyebrow="WORKSPACE"><PageLoading /></AppShell>;
   if (!allowed) return <AppShell title="赛题编辑" eyebrow="WORKSPACE"><PageError message="当前账户没有赛题管理权限。" /></AppShell>;
   if (error || (!isNew && !existing) || !selected) return <AppShell title="赛题编辑" eyebrow="WORKSPACE"><PageError message={error || "赛题或赛道不存在。"} retry={reload} /></AppShell>;
 
@@ -71,7 +70,7 @@ export default function ManageProblemPage() {
     competition={selected.competition}
     tracks={tracks}
     isNew={isNew}
-    onCreated={(id) => router.replace(`/manage/problems/${id}`)}
+    onCreated={async (id) => { await reload(); router.replace(`/manage/problems/${id}?panel=setup`); }}
     onDeleted={() => router.replace(`/manage/competitions/${selected.competition.id}`)}
     reload={reload}
   />;
@@ -83,12 +82,13 @@ function ProblemEditor({ problem, initialTrack, competition, tracks, isNew, onCr
   competition: Competition;
   tracks: { track: Track; competition: Competition }[];
   isNew: boolean;
-  onCreated: (id: string) => void;
+  onCreated: (id: string) => Promise<void>;
   onDeleted: () => void;
   reload: () => Promise<void>;
 }) {
   const [trackId, setTrackId] = useState(initialTrack.id);
-  const [panel, setPanel] = useState<"settings" | "quotas">("settings");
+  const searchParams = useSearchParams();
+  const [panel, setPanel] = useState<"settings" | "setup">(searchParams.get("panel") === "setup" && !isNew ? "setup" : "settings");
   const [code, setCode] = useState(problem?.code ?? "");
   const [slug, setSlug] = useState(problem?.slug ?? "");
   const [title, setTitle] = useState(problem?.title ?? "");
@@ -150,13 +150,12 @@ function ProblemEditor({ problem, initialTrack, competition, tracks, isNew, onCr
         submission_schema: submissionSchema,
         judging_schema: { rubric: parseRubric(rubric) },
         scoring_config: { external_weight_percent: parsedExternalWeight },
-        evaluation_config: evaluationConfig,
+        ...(isNew ? { evaluation_config: evaluationConfig } : {}),
       };
       if (isNew) {
         const result = await api<Problem>(`/tracks/${trackId}/problems`, { method: "POST", ...jsonBody(body) });
-        await reload();
         toast.success(status === "published" ? "赛题已创建并发布" : "赛题草稿已创建");
-        onCreated(result.id);
+        await onCreated(result.id);
       } else if (problem) {
         await api(`/manage/problems/${problem.id}`, { method: "PATCH", ...jsonBody(body) });
         await reload();
@@ -186,10 +185,10 @@ function ProblemEditor({ problem, initialTrack, competition, tracks, isNew, onCr
     <AppShell title={isNew ? "发布赛题" : `编辑：${problem?.title}`} eyebrow="PROBLEM WORKBENCH" actions={<Link className="outline-button" href={`/manage/competitions/${selectedTrack.competition.id}`}><ArrowLeft size={15} />返回赛事</Link>}>
       {!isNew && <nav className="ai-tabs problem-editor-tabs" aria-label="题目管理功能">
         <button type="button" className={panel === "settings" ? "active" : ""} aria-pressed={panel === "settings"} onClick={() => setPanel("settings")}>题目设置</button>
-        <button type="button" className={panel === "quotas" ? "active" : ""} aria-pressed={panel === "quotas"} onClick={() => setPanel("quotas")}>资源额度</button>
+        <button type="button" className={panel === "setup" ? "active" : ""} aria-pressed={panel === "setup"} onClick={() => setPanel("setup")}>环境与资源</button>
       </nav>}
-      {problem && panel === "quotas" && <ProblemAIQuotas key={problem.id} problem={{ id: problem.id, title: problem.title, competition_id: tracks.find(item => item.track.id === problem.track_id)?.competition.id ?? competition.id }} />}
-      {problem && panel === "quotas" && <div style={{ marginTop: 32 }}><ComputeQuotaEditor problemId={problem.id} /></div>}
+      {problem && panel === "setup" && <ProblemSetupEditor problemId={problem.id} saved={reload} />}
+      {isNew && <ProblemPackageImport trackId={trackId} onCreated={onCreated} />}
       <div hidden={panel !== "settings"}>
       <div className="problem-editor-layout">
         <form className="manage-form problem-editor-form" onSubmit={save} noValidate>
@@ -221,7 +220,7 @@ function ProblemEditor({ problem, initialTrack, competition, tracks, isNew, onCr
             </div>
             <label className="form-field"><span>算力与环境说明</span><input value={computeNote} onChange={(event) => setComputeNote(event.target.value)} /></label>
             <label className="form-field external-score-field" data-invalid={Boolean(externalWeightError)}><span>外部评分权重</span><span className="unit-input"><input type="number" min="0" max="100" step="1" value={externalWeight} onChange={(event) => { setExternalWeight(event.target.value); setExternalWeightError(""); }} aria-invalid={Boolean(externalWeightError)} /><b>%</b></span><FieldError>{externalWeightError}</FieldError><small>0% 仅在线评审，100% 仅外部评分；中间值会与在线评审按比例合并。</small></label>
-            <EvaluationConfigEditor value={evaluationConfig} onChange={setEvaluationConfig} />
+            {isNew && <EvaluationConfigEditor value={evaluationConfig} onChange={setEvaluationConfig} />}
             <MarkdownEditor label="题面" name="problem-statement" value={statement} onChange={setStatement} required height={580} />
             <SubmissionSchemaEditor value={submissionSchema} onChange={setSubmissionSchema} />
             <div className="form-grid">

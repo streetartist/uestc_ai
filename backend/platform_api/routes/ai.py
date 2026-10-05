@@ -228,6 +228,13 @@ def save_problem_quota(problem_id):
     problem = db.session.get(Problem, problem_id)
     if not problem:
         raise GatewayError("题目不存在。", 404)
+    team_count, created = apply_problem_quota(problem, config)
+    db.session.commit()
+    return jsonify({"problem_id": problem_id, "config": config, "team_count": team_count}), 201 if created else 200
+
+
+def apply_problem_quota(problem, config):
+    problem_id = problem.id
     lock_competition(problem.track.competition_id)
     lock_problem(problem_id)
     # Grant locks also serialize quota edits against concurrent reservations.
@@ -246,8 +253,7 @@ def save_problem_quota(problem_id):
         apply_quota(grant, config)
         db.session.add(grant)
     audit("ai.problem_quota_updated", "problem", problem_id, {"team_count": len(teams), **config})
-    db.session.commit()
-    return jsonify({"problem_id": problem_id, "config": config, "team_count": len(teams)}), 201 if created else 200
+    return len(teams), created
 
 
 @ai_bp.put("/ai/manage/grants/<team_id>")

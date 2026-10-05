@@ -4,10 +4,11 @@ import type { EvaluationAdapter, EvaluationConfig } from "@/app/lib/domain";
 import { useApiResource } from "@/app/lib/useApiResource";
 
 function initialConfig(adapter: EvaluationAdapter): EvaluationConfig {
+  const minecraft = adapter.id === "minecraft-agent-v1";
   return {
-    adapter: adapter.id, task: adapter.tasks[0],
-    resources: { cpus: 2, memory_mb: 4096, gpu: false, time_seconds: 900, episodes: 1 },
-    api: { enabled: false, max_calls: 0 }, metrics: adapter.metrics.map((metric) => metric.key), max_team_runs: 3,
+    adapter: adapter.id, task: minecraft ? "open-world" : adapter.tasks[0],
+    resources: { cpus: minecraft ? 4 : 2, memory_mb: minecraft ? 6144 : 4096, gpu: false, time_seconds: 900, episodes: 1 },
+    api: { enabled: false, max_calls: 0 }, metrics: adapter.metrics.filter(metric => !minecraft || !["api_calls", "api_cost", "survival_seconds"].includes(metric.key)).map((metric) => metric.key), max_team_runs: 3,
   };
 }
 
@@ -25,7 +26,7 @@ export function EvaluationConfigEditor({ value, onChange }: { value: EvaluationC
     {error && <p role="alert">评测器列表暂时不可用：{error}</p>}
     {chosen && active && <>
       {!chosen.available && <p className="evaluation-note">运行端尚未接入。可以保存题目配置，接入前无法正式提交此题。</p>}
-      <div className="form-grid"><label className="form-field"><span>任务类型</span><select value={active.task} onChange={(event) => onChange({ ...active, task: event.target.value, metrics: event.target.value === "open-world" && active.adapter === "minecraft-agent-v1" ? active.metrics.filter((key) => key !== "api_calls") : active.metrics })}>{chosen.tasks.map((task) => <option key={task} value={task}>{task}</option>)}</select></label>
+      <div className="form-grid"><label className="form-field"><span>任务类型</span><select value={active.task} onChange={(event) => onChange({ ...active, task: event.target.value, metrics: event.target.value === "open-world" && active.adapter === "minecraft-agent-v1" ? active.metrics.filter((key) => !["api_calls", "api_cost", "survival_seconds"].includes(key)) : active.metrics })}>{chosen.tasks.map((task) => <option key={task} value={task}>{task}</option>)}</select></label>
       <div className="form-field"><span>提交格式</span><p>{chosen.submission.label}</p></div></div>
       <div className="evaluation-resource-grid">
         <label className="form-field"><span>每次测试最长时长（秒）</span><input type="number" min={30} max={14400} required value={active.resources.time_seconds} onChange={(event) => onChange({ ...active, resources: { ...active.resources, time_seconds: Number(event.target.value) } })} /><small>30—14400 秒；本次全部场景共用，到时终止运行。</small></label>
@@ -41,7 +42,7 @@ export function EvaluationConfigEditor({ value, onChange }: { value: EvaluationC
       <label className="evaluation-toggle"><input type="checkbox" checked={active.resources.gpu} onChange={(event) => onChange({ ...active, resources: { ...active.resources, gpu: event.target.checked } })} />分配 GPU</label>
       <label className="evaluation-toggle"><input type="checkbox" checked={active.api.enabled} onChange={(event) => onChange({ ...active, api: { enabled: event.target.checked, max_calls: event.target.checked ? 100 : 0 } })} />允许受控 API 调用</label>
       {active.api.enabled && <label className="form-field"><span>API 调用上限</span><input type="number" min="0" max="100000" value={active.api.max_calls} onChange={(event) => onChange({ ...active, api: { ...active.api, max_calls: Number(event.target.value) } })} /></label>}
-      <div className="evaluation-metric-picker"><strong>展示指标</strong><div>{chosen.metrics.filter((metric) => !(active.adapter === "minecraft-agent-v1" && active.task === "open-world" && metric.key === "api_calls")).map((metric) => <label key={metric.key}><input type="checkbox" checked={active.metrics.includes(metric.key)} onChange={(event) => onChange({ ...active, metrics: event.target.checked ? [...active.metrics, metric.key] : active.metrics.filter((key) => key !== metric.key) })} /><span>{metric.label} <small>{metric.unit}</small></span></label>)}</div></div>
+      <div className="evaluation-metric-picker"><strong>展示指标</strong><div>{chosen.metrics.filter((metric) => !(active.adapter === "minecraft-agent-v1" && active.task === "open-world" && ["api_calls", "api_cost", "survival_seconds"].includes(metric.key))).map((metric) => <label key={metric.key}><input type="checkbox" checked={active.metrics.includes(metric.key)} onChange={(event) => onChange({ ...active, metrics: event.target.checked ? [...active.metrics, metric.key] : active.metrics.filter((key) => key !== metric.key) })} /><span>{metric.label} <small>{metric.unit}</small></span></label>)}</div></div>
       <p className="evaluation-note">指标由独立运行端提供，仅用于作品展示和评委参考，不计入外部评分。</p>
     </>}
   </fieldset>;

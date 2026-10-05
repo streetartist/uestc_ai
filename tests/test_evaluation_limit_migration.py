@@ -3,13 +3,14 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from flask_migrate import downgrade, upgrade
 from sqlalchemy import MetaData, Table, inspect, text
 from platform_api import create_app
 from platform_api.extensions import db
-from platform_api.models import Competition, EvaluationRun, Problem, Team, User
+from platform_api.models import Competition, Problem, Team, User
 from platform_api.seed import seed_database
 
 
@@ -33,14 +34,18 @@ class EvaluationLimitMigrationTests(unittest.TestCase):
                     metadata = MetaData()
                     submissions = Table("submissions", metadata, autoload_with=db.engine)
                     versions = Table("submission_versions", metadata, autoload_with=db.engine)
+                    runs = Table("evaluation_runs", metadata, autoload_with=db.engine)
                     now = datetime.now(timezone.utc)
                     db.session.execute(submissions.insert().values(id="submitted", problem_id=problem.id, team_id=team.id,
                         title="Before upgrade", status="submitted", current_version=1, created_at=now, updated_at=now))
                     db.session.execute(versions.insert().values(id="version", submission_id="submitted", version=1,
                         readme_md="", fields={}, snapshot={}, status="submitted", created_by=user.id, created_at=now))
                     for status in ("failed", "superseded", "queued"):
-                        db.session.add(EvaluationRun(problem_id=problem.id, submission_version_id="version", status=status,
-                            config_snapshot={}, submission_snapshot={}))
+                        # Use the historical schema rather than the latest ORM,
+                        # which now also includes frozen runtime snapshots.
+                        db.session.execute(runs.insert().values(id=str(uuid4()), problem_id=problem.id,
+                            submission_version_id="version", status=status, config_snapshot={}, submission_snapshot={},
+                            attempts=0, metrics={}, episodes=[], api_calls_used=0, created_at=now, updated_at=now))
                     db.session.commit()
                     db.session.remove()
                     upgrade()

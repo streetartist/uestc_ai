@@ -1,4 +1,5 @@
 from __future__ import annotations
+from copy import deepcopy
 
 import csv
 import io
@@ -289,6 +290,7 @@ def submit_work():
         db.session.flush()
         db.session.add(EvaluationRun(
             problem=problem, submission_version=version,
+            runtime_snapshot=deepcopy(problem.runtime.config) if problem.runtime else None,
             config_snapshot={**evaluation_config, "metric_definitions": [metric for metric in adapter["metrics"] if metric["key"] in evaluation_config["metrics"]]},
             submission_snapshot={
                 "captured_at": version.snapshot["captured_at"], "asset_id": packages[0].id,

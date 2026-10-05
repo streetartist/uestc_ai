@@ -17,6 +17,7 @@ from .routes.submissions import submissions_bp
 from .routes.evaluations import evaluations_bp
 from .routes.ai import ai_bp
 from .routes.compute import compute_bp
+from .routes.problem_setup import setup_bp
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -102,6 +103,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(evaluations_bp, url_prefix="/api")
     app.register_blueprint(ai_bp, url_prefix="/api")
     app.register_blueprint(compute_bp, url_prefix="/api")
+    app.register_blueprint(setup_bp, url_prefix="/api")
     app.register_blueprint(content_bp, url_prefix="/api")
     app.register_blueprint(manage_bp, url_prefix="/api")
     app.register_blueprint(markdown_assets_bp, url_prefix="/api")

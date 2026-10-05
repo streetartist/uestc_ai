@@ -165,6 +165,7 @@ class Problem(TimestampMixin, db.Model):
     evaluation_runs = db.relationship("EvaluationRun", back_populates="problem", cascade="all, delete-orphan")
     ai_quota_policy = db.relationship("AIProblemQuota", back_populates="problem", uselist=False, cascade="all, delete-orphan")
     compute_policy = db.relationship("ComputePolicy", back_populates="problem", uselist=False, cascade="all, delete-orphan")
+    runtime = db.relationship("ProblemRuntime", back_populates="problem", uselist=False, cascade="all, delete-orphan")
 
     def to_dict(self, include_statement=False):
         data = {"id": self.id, "track_id": self.track_id, "code": self.code, "slug": self.slug, "title": self.title, "summary": self.summary, "status": self.status, "difficulty": self.difficulty, "compute_note": self.compute_note, "source_url": self.source_url, "submission_schema": self.submission_schema, "judging_schema": self.judging_schema, "scoring_config": self.scoring_config, "evaluation_config": self.evaluation_config}
@@ -393,6 +394,8 @@ class EvaluationRun(TimestampMixin, db.Model):
     problem_id = db.Column(db.String(36), db.ForeignKey("problems.id", ondelete="CASCADE"), nullable=False, index=True)
     submission_version_id = db.Column(db.String(36), db.ForeignKey("submission_versions.id", ondelete="CASCADE"), nullable=False, index=True)
     config_snapshot = db.Column(db.JSON, nullable=False)
+    # Never include trusted runtime or private cases in public serializers.
+    runtime_snapshot = db.Column(db.JSON(none_as_null=True))
     submission_snapshot = db.Column(db.JSON, nullable=False)
     status = db.Column(db.String(24), nullable=False, default="queued", index=True)
     attempts = db.Column(db.Integer, nullable=False, default=0)
@@ -419,6 +422,20 @@ class EvaluationRun(TimestampMixin, db.Model):
             "created_at": iso(self.created_at), "started_at": iso(self.started_at),
             "finished_at": iso(self.finished_at),
         }
+
+
+class ProblemRuntime(TimestampMixin, db.Model):
+    __tablename__ = "problem_runtimes"
+    problem_id = db.Column(db.String(36), db.ForeignKey("problems.id", ondelete="CASCADE"), primary_key=True)
+    config = db.Column(db.JSON, nullable=False)
+    problem = db.relationship("Problem", back_populates="runtime")
+
+
+class EvaluationWorkerState(db.Model):
+    __tablename__ = "evaluation_worker_states"
+    id = db.Column(db.String(80), primary_key=True)
+    capabilities = db.Column(db.JSON, nullable=False)
+    seen_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
 
 
 class Content(TimestampMixin, db.Model):

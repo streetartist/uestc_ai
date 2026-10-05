@@ -135,6 +135,11 @@ def validate_evaluation_config(value: object) -> dict:
         raise ValueError("unknown or empty evaluation metrics")
     if value["adapter"] == "minecraft-agent-v1" and value["task"] == "open-world" and "api_calls" in metrics:
         raise ValueError("Minecraft API calls are available per run, not per episode")
+    if value["adapter"] == "minecraft-agent-v1" and value["task"] == "open-world" and set(metrics) - {
+        "task_success", "exploration_progress", "objectives", "unique_items", "distance_blocks",
+        "tech_milestones", "deaths", "invalid_actions", "mean_step_ms",
+    }:
+        raise ValueError("所选指标尚无可信 MC 场景测量，请使用已支持的探索、任务与动作指标。")
     return deepcopy(value)
 
 

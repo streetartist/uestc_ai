@@ -189,11 +189,23 @@ def problem_quota(problem_id):
     policy = db.session.get(ComputePolicy, problem_id)
     if request.method == "GET":
         return jsonify({"config": policy.config if policy else None, "team_count": Team.query.filter_by(competition_id=problem.track.competition_id).count()})
-    data = data_object()
+    config = compute_quota_values(data_object())
+    apply_problem_compute(problem, config)
+    db.session.commit()
+    return jsonify({"config": config, "team_count": Team.query.filter_by(competition_id=problem.track.competition_id).count()})
+
+
+def compute_quota_values(data):
     provider_id = text(data, "provider_id", maximum=36)
     config = {"provider_id": provider_id, "enabled": boolean(data, "enabled"),
         "max_gpu_seconds": integer(data, "max_gpu_seconds", None, 0),
         "max_cost_millis": None if data.get("max_cost_millis") is None else integer(data, "max_cost_millis", None)}
+    return config
+
+
+def apply_problem_compute(problem, config):
+    problem_id = problem.id
+    provider_id = config["provider_id"]
     lock_competition(problem.track.competition_id)
     lock_problem(problem_id)
     db.session.execute(update(ComputeProvider).where(ComputeProvider.id == provider_id).values(enabled=ComputeProvider.enabled))
@@ -215,8 +227,6 @@ def problem_quota(problem_id):
     policy.config = config
     db.session.add(policy)
     audit("compute.problem.quota", "problem", problem_id, config)
-    db.session.commit()
-    return jsonify({"config": config, "team_count": Team.query.filter_by(competition_id=problem.track.competition_id).count()})
 
 
 @compute_bp.post("/compute/grants/<grant_id>/start")

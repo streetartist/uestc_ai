@@ -14,7 +14,7 @@ from sqlalchemy import and_, or_, update
 
 from ..evaluation import catalog, evaluation_budget, validate_metrics
 from ..extensions import db
-from ..models import EvaluationRun, Problem, Submission, SubmissionAsset, SubmissionVersion, Team, iso
+from ..models import EvaluationRun, EvaluationWorkerState, ProblemRuntime, Problem, Submission, SubmissionAsset, SubmissionVersion, Team, iso
 from ..security import current_user, hash_token, require_user, team_member
 from ..utils import audit
 
@@ -110,19 +110,37 @@ def claim_run():
     if not worker_authorized():
         return jsonify({"error": "worker authentication required"}), 401
     capabilities = request.get_json(silent=True)
-    if (not isinstance(capabilities, dict) or set(capabilities) != {"adapters", "gpu"}
+    if (not isinstance(capabilities, dict) or not {"adapters", "gpu"} <= set(capabilities)
+            or set(capabilities) - {"adapters", "gpu", "managed_runtime", "api_proxy", "worker_id", "legacy_adapters"}
             or not isinstance(capabilities["adapters"], list) or not capabilities["adapters"]
             or len(capabilities["adapters"]) > 64
             or any(not isinstance(item, str) or len(item) > 64 for item in capabilities["adapters"])
-            or type(capabilities["gpu"]) is not bool):
+            or type(capabilities["gpu"]) is not bool
+            or not isinstance(capabilities.get("legacy_adapters", []), list)
+            or any(not isinstance(item, str) or item not in capabilities["adapters"] for item in capabilities.get("legacy_adapters", []))
+            or any(type(capabilities.get(key, False)) is not bool for key in ("managed_runtime", "api_proxy"))
+            or not isinstance(capabilities.get("worker_id", "legacy"), str)
+            or not 1 <= len(capabilities.get("worker_id", "legacy")) <= 80):
         return jsonify({"error": "worker capabilities are required"}), 400
     now = now_utc()
+    state = db.session.get(EvaluationWorkerState, capabilities.get("worker_id", "legacy")) or EvaluationWorkerState(id=capabilities.get("worker_id", "legacy"))
+    state.capabilities = deepcopy(capabilities)
+    state.seen_at = now
+    db.session.add(state)
+    db.session.commit()
     query = EvaluationRun.query.filter(or_(
         EvaluationRun.status == "queued",
         and_(EvaluationRun.status == "running", EvaluationRun.lease_expires_at < now),
     ), EvaluationRun.config_snapshot["adapter"].as_string().in_(capabilities["adapters"]))
     if not capabilities["gpu"]:
         query = query.filter(EvaluationRun.config_snapshot["resources"]["gpu"].as_boolean() == False)
+    if not capabilities.get("managed_runtime", False):
+        query = query.filter(EvaluationRun.runtime_snapshot["image"].as_string().is_(None))
+    elif "legacy_adapters" in capabilities:
+        query = query.filter(or_(EvaluationRun.runtime_snapshot["image"].as_string().is_not(None),
+            EvaluationRun.config_snapshot["adapter"].as_string().in_(capabilities["legacy_adapters"])))
+    if not capabilities.get("api_proxy", True):
+        query = query.filter(EvaluationRun.config_snapshot["api"]["enabled"].as_boolean() == False)
     candidates = query.order_by(EvaluationRun.created_at.asc()).limit(25).all()
     for run in candidates:
         claimable = or_(EvaluationRun.status == "queued", and_(EvaluationRun.status == "running", EvaluationRun.lease_expires_at < now))
@@ -144,13 +162,28 @@ def claim_run():
         if not changed.rowcount:
             continue
         db.session.refresh(run)
+        state.capabilities = {**capabilities, "active_run_id": run.id}
+        db.session.commit()
         return jsonify({
             "id": run.id, "lease_token": token, "api_token": api_token, "lease_seconds": LEASE_SECONDS,
             "config": deepcopy(run.config_snapshot),
+            "runtime": deepcopy(run.runtime_snapshot),
             "submission": deepcopy(run.submission_snapshot),
             "asset_url": f"/api/evaluation-worker/runs/{run.id}/asset",
         })
     return "", 204
+
+
+@evaluations_bp.get("/evaluation-worker/runtime-catalog")
+def worker_runtime_catalog():
+    if not worker_authorized():
+        return jsonify({"error": "worker authentication required"}), 401
+    configured = {item.problem.evaluation_config.get("adapter") for item in ProblemRuntime.query.all()}
+    # Keep frozen pending jobs discoverable after a problem is archived.
+    configured.update(run.config_snapshot["adapter"] for run in EvaluationRun.query.filter(EvaluationRun.status.in_(["queued", "running"])).all() if run.runtime_snapshot)
+    response = jsonify({"adapters": sorted(item for item in configured if item)})
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @evaluations_bp.post("/evaluation-worker/runs/<run_id>/heartbeat")
@@ -159,6 +192,9 @@ def heartbeat(run_id: str):
     if not run:
         return jsonify({"error": "evaluation lease invalid or expired"}), 403
     run.lease_expires_at = now_utc() + timedelta(seconds=LEASE_SECONDS)
+    db.session.execute(update(EvaluationWorkerState).where(
+        EvaluationWorkerState.capabilities["active_run_id"].as_string() == run.id
+    ).values(seen_at=now_utc()))
     db.session.commit()
     return jsonify({"lease_expires_at": iso(run.lease_expires_at)})
 

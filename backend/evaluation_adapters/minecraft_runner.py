@@ -121,18 +121,20 @@ def run_episode(channel: JsonChannel, env, scenario: dict, selected: list[str]) 
     return {key: measured[key] for key in selected}
 
 
-def evaluate(config: dict, scenarios: list[dict], environment_factory, socket_path: Path | tuple, output: Path) -> list[dict]:
-    if config["adapter"] != "minecraft-agent-v1" or config["task"] != "open-world":
-        raise ValueError("invalid Minecraft evaluation task")
-    if len(scenarios) != config["resources"]["episodes"]:
+def validate_scenarios(scenarios, episodes):
+    if not isinstance(scenarios, list) or any(not isinstance(scene, dict) for scene in scenarios):
+        raise ValueError("测试场景必须是 JSON 对象列表")
+    if len(scenarios) != episodes:
         raise ValueError("scenario count does not match the configured episodes")
     scenario_ids = set()
     for scene in scenarios:
-        if (scene.get("task_id") != "open-ended" or not isinstance(scene.get("world_seed"), (int, str))
-                or not isinstance(scene.get("max_steps"), int) or not 1 <= scene["max_steps"] <= 3000
+        if (scene.get("task_id") != "open-ended" or type(scene.get("world_seed")) not in (int, str)
+                or isinstance(scene["world_seed"], str) and not 1 <= len(scene["world_seed"]) <= 64
+                or type(scene.get("max_steps")) is not int or not 1 <= scene["max_steps"] <= 3000
                 or not isinstance(scene.get("goals"), list) or not scene["goals"]
-                or len(scene["goals"]) != len(set(scene["goals"]))
-                or any(not isinstance(item, str) or not item for item in scene["goals"])):
+                or len(scene["goals"]) > 20
+                or any(not isinstance(item, str) or not 1 <= len(item) <= 160 for item in scene["goals"])
+                or len(scene["goals"]) != len(set(scene["goals"]))):
             raise ValueError("invalid trusted Minecraft scenario")
         if (not isinstance(scene.get("id"), str) or not 1 <= len(scene["id"]) <= 64
                 or scene["id"] in scenario_ids
@@ -140,6 +142,12 @@ def evaluate(config: dict, scenarios: list[dict], environment_factory, socket_pa
                 or scene.get("difficulty") not in DIFFICULTIES):
             raise ValueError("Minecraft scenario needs a unique id, label and valid difficulty")
         scenario_ids.add(scene["id"])
+
+
+def evaluate(config: dict, scenarios: list[dict], environment_factory, socket_path: Path | tuple, output: Path) -> list[dict]:
+    if config["adapter"] != "minecraft-agent-v1" or config["task"] != "open-world":
+        raise ValueError("invalid Minecraft evaluation task")
+    validate_scenarios(scenarios, config["resources"]["episodes"])
     if isinstance(socket_path, Path):
         socket_path.parent.mkdir(parents=True, exist_ok=True)
     elif socket_path[0] != "127.0.0.1":

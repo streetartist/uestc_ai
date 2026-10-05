@@ -280,6 +280,9 @@ def update_problem(problem_id: str):
         db.session.refresh(problem)
         try:
             data["evaluation_config"] = validate_evaluation_config(data.get("evaluation_config", problem.evaluation_config))
+            if problem.runtime:
+                from ..problem_setup import validate_runtime
+                validate_runtime(problem.runtime.config, data["evaluation_config"])
         except ValueError as error:
             return jsonify({"error": str(error)}), 400
         if Submission.query.filter_by(problem_id=problem.id).first() and fixed_evaluation_rules(data["evaluation_config"]) != fixed_evaluation_rules(problem.evaluation_config):
