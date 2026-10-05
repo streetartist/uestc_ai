@@ -413,10 +413,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .registration-chip > button:hover, .team-delete:hover, .submission-delete:hover { color: var(--danger); }
 .registration-chip .status-pill { padding-right: 5px; }
 .team-delete, .submission-delete { color: var(--quiet); }
-.team-actions-grid { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; margin-top: 20px; }
-.compact-form { align-items: end; display: grid; gap: 13px; grid-template-columns: 150px minmax(0, 1fr) auto; }
+.team-actions-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr)); margin-top: 20px; }
+.compact-form { align-items: end; display: grid; gap: 13px; grid-template-columns: repeat(2, minmax(0, 1fr)); min-width: 0; }
+.compact-form > .form-field { min-width: 0; }
+.compact-form .form-field :is(input, select) { min-width: 0; }
+.compact-form > button { grid-column: 1 / -1; justify-self: start; white-space: nowrap; }
 .compact-form h3 { font-family: Georgia, serif; font-size: 18px; font-weight: 400; grid-column: 1 / -1; letter-spacing: 0; margin: 0; }
-.compact-form p { color: var(--quiet); font-size: 12px; margin: 0; }
+.compact-form p { color: var(--quiet); font-size: 12px; grid-column: 1 / -1; margin: 0; }
 .submission-list > div { align-items: stretch; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: minmax(0, 1fr) 36px; }
 .submission-list > div > a { align-items: center; display: grid; gap: 14px; grid-template-columns: 28px minmax(0, 1fr) auto 18px; min-height: 67px; padding: 10px 3px; }
 .submission-list > div > a:hover { background: rgba(255, 255, 255, .36); }
@@ -980,7 +983,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .verification-control { grid-template-columns: 1fr; }
   .verification-control .outline-button { width: 100%; }
   .team-row { align-items: start; grid-template-columns: 35px minmax(0, 1fr) auto; padding: 14px 0; }
-  .team-registrations { grid-column: 2 / 3; justify-content: flex-start; }
+  .team-row > .invite-code { grid-column: 2 / -1; justify-self: start; white-space: nowrap; }
+  .team-registrations { grid-column: 2 / -1; justify-content: flex-start; }
   .team-row > .team-delete, .team-row > span:last-child { grid-column: 3; grid-row: 1; }
   .compact-form { grid-template-columns: 1fr; }
   .submission-list > div > a { gap: 10px; grid-template-columns: 24px minmax(0, 1fr) 17px; }
