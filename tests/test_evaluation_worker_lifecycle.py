@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -47,10 +48,13 @@ class WorkerLifecycleTests(unittest.TestCase):
             return None
         values = {'EVALUATION_API_BASE': 'https://example.test/api', 'EVALUATION_WORKER_TOKEN': 'test-secret',
                   'EVALUATION_WORKER_ID': 'worker-a', 'EVALUATION_IMAGES_JSON': '{}',
+                  'EVALUATION_MEMORY_BUDGET_MB': '512',
                   'EVALUATION_INSTALLED_ADAPTERS': 'robot-arm-agent-v1,minecraft-agent-v1',
                   'EVALUATION_WORKER_ADAPTERS': '', 'EVALUATION_API_PROXY_URL': '', 'EVALUATION_NETWORK': ''}
-        with patch.dict(os.environ, values), patch.object(sys, 'argv', ['worker', '--once']), patch.object(worker.signal, 'signal'), patch.object(worker, 'cleanup_worker_containers'), patch.object(worker.subprocess, 'run', return_value=SimpleNamespace(returncode=0)), patch.object(worker, 'request_json', side_effect=api):
-            worker.main()
+        with tempfile.TemporaryDirectory() as directory:
+            values['EVALUATION_WORKER_LOCK_FILE'] = str(Path(directory) / 'worker.lock')
+            with patch.dict(os.environ, values), patch.object(sys, 'argv', ['worker', '--once']), patch.object(worker.signal, 'signal'), patch.object(worker, 'cleanup_worker_containers'), patch.object(worker.subprocess, 'run', return_value=SimpleNamespace(returncode=0)), patch.object(worker, 'request_json', side_effect=api):
+                worker.main()
         self.assertEqual(claimed[0]['adapters'], ['minecraft-agent-v1', 'robot-arm-agent-v1'])
         self.assertEqual(claimed[0]['legacy_adapters'], [])
         self.assertTrue(claimed[0]['managed_runtime'])

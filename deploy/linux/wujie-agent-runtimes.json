@@ -1,0 +1,102 @@
+{
+  "rules_version": "wujie-2026-v2",
+  "verified_at": "2026-10-06",
+  "images": {
+    "minecraft": {
+      "controller": "sha256:e6d8bdec3a3d58ac5ad09c9b35eacb8e98678aff380d8025e8cffa1b5e54cd83",
+      "agent": "sha256:1a0626df01f209460231a71798b631300277368a5c5237ae9f3bcf7cd6046b7a"
+    },
+    "robot-arm": {
+      "controller": "sha256:16b1561fb40e16be20415a474cd3838301b9e1704dabb647fd7948af66fa303f",
+      "agent": "sha256:5c5c5ab02ad3d94c2a4b3532768f87249bd4e947e97a80fe696b23510356d5ac"
+    }
+  },
+  "libero_commit": "8f1084e3132a39270c3a13ebe37270a43ece2a01",
+  "transport_acceptance": [
+    {
+      "status": "passed",
+      "adapter": "minecraft-agent-v1",
+      "real_environment": true,
+      "production_api": false,
+      "upstream_model_tested": false,
+      "published_step_budgets": [
+        600,
+        1500,
+        3000
+      ],
+      "tested_step_budgets": [
+        8,
+        8,
+        8
+      ],
+      "negative": false,
+      "team_and_reviewer_result_verified": true,
+      "formal_did_not_charge_extra": true,
+      "private_evidence_verified": true,
+      "containers_cleaned": true
+    },
+    {
+      "status": "passed",
+      "adapter": "libero-agent-v1",
+      "real_environment": true,
+      "production_api": false,
+      "upstream_model_tested": false,
+      "published_step_budgets": [
+        600,
+        600,
+        1000
+      ],
+      "tested_step_budgets": [
+        30,
+        30,
+        30
+      ],
+      "negative": false,
+      "team_and_reviewer_result_verified": true,
+      "formal_did_not_charge_extra": true,
+      "private_evidence_verified": true,
+      "containers_cleaned": true
+    },
+    {
+      "status": "passed",
+      "adapter": "libero-agent-v1",
+      "real_environment": true,
+      "production_api": false,
+      "upstream_model_tested": false,
+      "published_step_budgets": [
+        600,
+        600,
+        1000
+      ],
+      "tested_step_budgets": [
+        30,
+        30,
+        30
+      ],
+      "negative": true,
+      "team_and_reviewer_result_verified": true,
+      "formal_did_not_charge_extra": true,
+      "private_evidence_verified": true,
+      "containers_cleaned": true
+    }
+  ],
+  "native_libero_success_fixture": {
+    "judge_initial_states": [
+      20,
+      21,
+      22
+    ],
+    "initial_success": [
+      false,
+      false,
+      false
+    ],
+    "physically_satisfied_goal_success": [
+      true,
+      true,
+      true
+    ],
+    "contestant_solving_policy": false
+  },
+  "limits": "Short-step real environment transport acceptance; full published step budgets and upstream model quality were not tested."
+}

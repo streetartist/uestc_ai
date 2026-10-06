@@ -41,8 +41,9 @@ function isUrl(value: string) {
 function ReviewForm({ item, onSaved }: { item: ReviewQueueItem; onSaved: (review: SavedReview) => void }) {
   const toast = useToast();
   const rubric = useMemo(() => item.problem.judging_schema.rubric ?? {}, [item.problem.judging_schema.rubric]);
+  const performance = item.evaluation?.performance;
   const [scores, setScores] = useState<Record<string, number>>(
-    item.my_review?.scores ?? Object.fromEntries(Object.keys(rubric).map((key) => [key, 0])),
+    { ...(item.my_review?.scores ?? Object.fromEntries(Object.keys(rubric).map((key) => [key, 0]))), ...(performance ? { [performance.criterion]: performance.score } : {}) },
   );
   const [feedback, setFeedback] = useState(item.my_review?.feedback_md ?? "");
   const [formError, setFormError] = useState("");
@@ -55,8 +56,8 @@ function ReviewForm({ item, onSaved }: { item: ReviewQueueItem; onSaved: (review
     event.preventDefault();
     setFormError(""); setSavedAt(null); setSaving(true);
     try {
-      const result = await api<{ id: string; status: string; total_score: number }>("/reviews", { method: "POST", ...jsonBody({ submission_version_id: item.id, scores, total_score: total, feedback_md: feedback, status: "submitted" }) });
-      const review = { id: result.id, scores, total_score: result.total_score, feedback_md: feedback, status: result.status };
+      const result = await api<{ id: string; status: string; total_score: number; scores: Record<string, number> }>("/reviews", { method: "POST", ...jsonBody({ submission_version_id: item.id, scores, total_score: total, feedback_md: feedback, status: "submitted" }) });
+      const review = { id: result.id, scores: result.scores, total_score: result.total_score, feedback_md: feedback, status: result.status };
       setSavedAt(new Date());
       onSaved(review);
       toast.success(`评审已保存：${item.submission.title}`);
@@ -68,7 +69,7 @@ function ReviewForm({ item, onSaved }: { item: ReviewQueueItem; onSaved: (review
     return <section className="review-form"><header><span>评分表</span><strong>等待指标</strong></header><p role="status">{item.evaluation?.status === "failed" ? "评测失败，本次没有有效指标。请由组织者核查运行环境或参赛者重新提交，完成评测后再评分。" : "自动评测尚未完成。指标生成后，再结合研究报告与代码提交评审。"}</p><small>可先阅读材料，点击工作台“刷新评测结果”查看最新状态。</small></section>;
   }
 
-  return <form className={`review-form ${item.review_locked ? "is-locked" : ""}`} onSubmit={submit} noValidate><header><span>评分表</span><strong>{total.toFixed(1)}</strong></header>{item.review_locked && <div className="review-locked-note" role="status"><LockKeyhole size={15} /><span><strong>在线评分已锁定</strong><small>当前记录仅供查看，组织者解锁后才能修改。</small></span></div>}{Object.entries(rubric).map(([key, weight]) => <label className="score-field" key={key}><span><strong>{key}</strong><small>{weighted ? "计分权重" : "建议权重"} {Math.round(weight * 100)}%</small></span><input type="number" min="0" max="100" step="0.5" disabled={item.review_locked} value={scores[key] ?? 0} onChange={(event) => { setSavedAt(null); setScores((current) => ({ ...current, [key]: Number(event.target.value) })); }} /></label>)}<label className="form-field"><span>评审意见</span><textarea value={feedback} disabled={item.review_locked} onChange={(event) => { setSavedAt(null); setFeedback(event.target.value); }} rows={7} /></label><FieldError>{formError}</FieldError>{savedAt && <div className="review-save-success" role="status"><Check size={15} /><span><strong>评审已保存</strong><small>{formatBeijing(savedAt, { hour: "2-digit", minute: "2-digit" })} · 已同步到评审记录</small></span></div>}<button className="primary-button form-submit" disabled={saving || item.review_locked}>{item.review_locked ? <LockKeyhole size={15} /> : <Save size={15} />}{item.review_locked ? "评分已锁定" : saving ? "正在保存" : "保存评审"}</button></form>;
+  return <form className={`review-form ${item.review_locked ? "is-locked" : ""}`} onSubmit={submit} noValidate><header><span>评分表</span><strong>{total.toFixed(1)}</strong></header>{item.review_locked && <div className="review-locked-note" role="status"><LockKeyhole size={15} /><span><strong>在线评分已锁定</strong><small>当前记录仅供查看，组织者解锁后才能修改。</small></span></div>}{Object.entries(rubric).map(([key, weight]) => <label className="score-field" key={key}><span><strong>{key}</strong><small>{weighted ? "计分权重" : "建议权重"} {Math.round(weight * 100)}%{performance?.criterion === key ? " · 平台自动计分" : ""}</small></span><input type="number" min="0" max="100" step="0.5" disabled={item.review_locked || performance?.criterion === key} value={scores[key] ?? 0} onChange={(event) => { setSavedAt(null); setScores((current) => ({ ...current, [key]: Number(event.target.value) })); }} /></label>)}<label className="form-field"><span>评审意见</span><textarea value={feedback} disabled={item.review_locked} onChange={(event) => { setSavedAt(null); setFeedback(event.target.value); }} rows={7} /></label><FieldError>{formError}</FieldError>{savedAt && <div className="review-save-success" role="status"><Check size={15} /><span><strong>评审已保存</strong><small>{formatBeijing(savedAt, { hour: "2-digit", minute: "2-digit" })} · 已同步到评审记录</small></span></div>}<button className="primary-button form-submit" disabled={saving || item.review_locked}>{item.review_locked ? <LockKeyhole size={15} /> : <Save size={15} />}{item.review_locked ? "评分已锁定" : saving ? "正在保存" : "保存评审"}</button></form>;
 }
 
 function ReviewMaterials({ item }: { item: ReviewQueueItem }) {

@@ -65,7 +65,8 @@ class ProblemSetupTests(unittest.TestCase):
         self.assertEqual(job["runtime"], self.runtime_config)
         public = self.member.get(f"/api/evaluation-runs/{job['id']}").get_data(as_text=True)
         self.assertNotIn('"seed"', public)
-        self.assertNotIn("sha256", public)
+        self.assertNotIn(self.runtime_config["image"], public)
+        self.assertNotIn(self.runtime_config["agent_image"], public)
 
     def package(self, document, extra=None):
         output = io.BytesIO()
@@ -109,7 +110,7 @@ class ProblemSetupTests(unittest.TestCase):
         job = worker.post("/api/evaluation-worker/claim", headers=headers, json={"adapters": ["classification-v1"], "gpu": False, "managed_runtime": True, "legacy_adapters": [], "worker_id": "setup-worker"}).get_json()
         self.assertEqual(job["runtime"], self.runtime_config)
         self.assertTrue(next(c for c in self.admin.get(self.url).get_json()["checks"] if c["key"] == "worker")["state"] == "ready")
-        for response in (self.member.get(f"/api/problems/{self.problem['id']}"), self.member.get(f"/api/evaluation-runs/{job['id']}"), self.member.get(f"/api/submissions/{submitted.get_json()['id']}")):
+        for response in (self.member.get(f"/api/problems/{self.problem['id']}"), self.member.get(f"/api/evaluation-runs/{job['id']}"), self.member.get(f"/api/submissions/{submitted.get_json()['submission_id']}")):
             self.assertNotIn("private-marker", response.get_data(as_text=True))
             self.assertNotIn(self.runtime_config["image"], response.get_data(as_text=True))
         changed = self.document(); changed["runtime"]["scenarios"] = [{"changed": True}]

@@ -1,0 +1,5 @@
+{
+  "train": ["user2", "user3", "user4", "user6", "user8", "user9", "user17", "user18", "user20", "user21", "user22", "user24"],
+  "validation": ["user1", "user16", "user23"],
+  "test": ["user5", "user7", "user19"]
+}

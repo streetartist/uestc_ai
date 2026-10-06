@@ -34,8 +34,15 @@ export type Problem = {
   source_url?: string | null;
   submission_schema: SubmissionSchema;
   judging_schema: { rubric?: Record<string, number> };
-  scoring_config: { external_weight_percent?: number; review_score_mode?: "sum" | "weighted"; external_score_label?: string; online_score_label?: string };
+  scoring_config: { external_weight_percent?: number; review_score_mode?: "sum" | "weighted"; external_score_label?: string; online_score_label?: string; performance_scoring?: { preset: string; criterion: string } };
   evaluation_config: EvaluationConfig;
+};
+
+export type CheckpointEntry = {
+  id: string; problem_id: string; team_id: string; problem_title: string; team_name: string;
+  checkpoint_id: string; revision: number; content_md: string; repository: string;
+  evaluation_run_id: string | null; package_name: string | null; package_sha256: string | null;
+  package_url: string | null; feedback_md: string; created_at: string; updated_at: string;
 };
 
 export type SubmissionFieldDefinition = {
@@ -90,7 +97,13 @@ export type EvaluationAdapter = {
 };
 
 export type EvaluationRun = {
+  quota_refunded?: boolean;
+  dispatch?: { state: string; label: string; detail: string | null; ahead?: number | null } | null;
   id: string;
+  submission_id: string;
+  purpose: "trial" | "submission";
+  package_name: string | null;
+  package_sha256: string | null;
   adapter: string;
   status: "queued" | "running" | "completed" | "failed" | "superseded";
   attempts: number;
@@ -98,6 +111,8 @@ export type EvaluationRun = {
   time_seconds: number;
   metrics: Record<string, number>;
   metric_definitions: EvaluationAdapter["metrics"];
+  performance?: { preset: string; criterion: string; score: number } | null;
+    artifacts?: Array<{ id: string; name: string; size: number; url: string }>;
   episodes: Array<Record<string, number> | {
     scenario: { id: string; label: string; difficulty: "beginner" | "intermediate" | "challenge" };
     metrics: Record<string, number>;
@@ -132,6 +147,7 @@ export type Competition = {
   ends_at?: string | null;
   config: {
     overview_md?: string;
+    checkpoints?: Array<{ id: string; label: string; due_at: string | null }>;
     team_size?: { min: number; max: number };
     submission_limit?: number;
     leaderboard?: { visible: boolean; rank_scope?: "track" };

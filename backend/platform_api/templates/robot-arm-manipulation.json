@@ -80,7 +80,7 @@
       "max_team_runs": 3,
       "resources": {
         "cpus": 2,
-        "memory_mb": 4096,
+        "memory_mb": 2048,
         "gpu": false,
         "time_seconds": 900,
         "episodes": 3

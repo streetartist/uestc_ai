@@ -73,7 +73,7 @@ class RobotArmTests(unittest.TestCase):
 
     def test_worker_routes_robot_to_two_containers_with_private_scenes(self):
         from evaluation_worker import execute
-        config = {"adapter": "robot-arm-agent-v1", "task": "multi-step", "resources": {"gpu": False}}
+        config = {"adapter": "robot-arm-agent-v1", "task": "multi-step", "resources": {"gpu": False, "memory_mb": 2048}}
         job = {"config": config, "runtime": {"image": "sha256:" + "a" * 64,
             "agent_image": "sha256:" + "b" * 64, "scenarios": default_scenes()}}
         with patch("evaluation_worker.execute_isolated_agent", return_value={"status": "completed"}) as runner:

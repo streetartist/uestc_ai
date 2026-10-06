@@ -15,10 +15,13 @@ from .routes.manage import manage_bp
 from .routes.markdown_assets import markdown_assets_bp
 from .routes.submissions import submissions_bp
 from .routes.evaluations import evaluations_bp
+from .routes.evaluation_trials import evaluation_trials_bp
 from .routes.ai import ai_bp
 from .routes.compute import compute_bp
 from .routes.problem_setup import setup_bp
 from .routes.profiles import profiles_bp
+from .routes.checkpoints import checkpoints_bp
+from .routes.evaluation_evidence import evidence_bp
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -60,6 +63,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         EVALUATION_ENABLED_ADAPTERS=os.environ.get("EVALUATION_ENABLED_ADAPTERS", ""),
         EVALUATION_API_URL=os.environ.get("EVALUATION_API_URL", ""),
         EVALUATION_API_KEY=os.environ.get("EVALUATION_API_KEY", ""),
+        EVALUATION_API_ORIGIN_IP=os.environ.get("EVALUATION_API_ORIGIN_IP", ""),
         AI_GATEWAY_ENCRYPTION_KEY=os.environ.get("AI_GATEWAY_ENCRYPTION_KEY", ""),
         AI_GATEWAY_ALLOW_LOCAL_HTTP=os.environ.get("AI_GATEWAY_ALLOW_LOCAL_HTTP", "0") == "1",
         AI_GATEWAY_TIMEOUT_SECONDS=120,
@@ -113,11 +117,14 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(competitions_bp, url_prefix="/api")
     app.register_blueprint(submissions_bp, url_prefix="/api")
     app.register_blueprint(evaluations_bp, url_prefix="/api")
+    app.register_blueprint(evaluation_trials_bp, url_prefix="/api")
     app.register_blueprint(ai_bp, url_prefix="/api")
     app.register_blueprint(compute_bp, url_prefix="/api")
     app.register_blueprint(setup_bp, url_prefix="/api")
     app.register_blueprint(content_bp, url_prefix="/api")
     app.register_blueprint(profiles_bp, url_prefix="/api")
+    app.register_blueprint(checkpoints_bp, url_prefix="/api")
+    app.register_blueprint(evidence_bp, url_prefix="/api")
     app.register_blueprint(manage_bp, url_prefix="/api")
     app.register_blueprint(markdown_assets_bp, url_prefix="/api")
     from .public_cache import init_public_cache
@@ -136,6 +143,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         return jsonify({"error": "payload exceeds 25 MB"}), 413
 
     with app.app_context():
+        from . import judge_models  # Register organizer pool metadata before schema creation.
         if app.config["AUTO_CREATE_SCHEMA"]:
             db.create_all()
         if app.config["SEED_DATABASE"]:

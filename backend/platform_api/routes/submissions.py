@@ -1,5 +1,4 @@
 from __future__ import annotations
-from copy import deepcopy
 
 import csv
 import io
@@ -10,7 +9,8 @@ from flask import Blueprint, current_app, jsonify, request, send_from_directory
 from sqlalchemy import func
 from ..extensions import db
 from ..models import Competition, EvaluationRun, Problem, Registration, Review, Score, ScoreBatch, StagedSubmissionAsset, Submission, SubmissionAsset, SubmissionVersion, Team, Track, new_id
-from ..evaluation import adapters, evaluation_budget
+from ..evaluation import adapters
+from ..evaluation_trials import can_view_result, selected_result_error
 from ..ai_quotas import lock_problem
 from ..submission_schema import validate_submission_materials
 from ..reviewing import calculate_review_total, combined_score, effective_reviewer_weights, external_weight_percent, is_review_locked, latest_external_score, review_score
@@ -84,12 +84,20 @@ def public_work_payload(version: SubmissionVersion, include_content: bool = True
     if include_content:
         data["assets"] = [asset.to_dict() for asset in version.assets]
         data["evaluation_config"] = submission.problem.evaluation_config
-        data["evaluation"] = current_evaluation(version)
+        result = current_evaluation(version)
+        run = db.session.get(EvaluationRun, result["id"]) if result else None
+        data["evaluation"] = result if run and can_view_result(run) else None
     return data
 
 
 def current_evaluation(version: SubmissionVersion):
-    run = EvaluationRun.query.filter_by(submission_version_id=version.id).order_by(EvaluationRun.created_at.desc()).first()
+    selected_id = (version.snapshot or {}).get("evaluation_run_id")
+    if selected_id:
+        selected = db.session.get(EvaluationRun, selected_id)
+        if selected and selected.submission_version_id == version.id and selected.status == "completed":
+            return selected.to_dict()
+        return None
+    run = EvaluationRun.query.filter_by(submission_version_id=version.id, purpose="submission").order_by(EvaluationRun.created_at.desc()).first()
     if not run or run.status == "superseded" or run.submission_snapshot.get("captured_at") != (version.snapshot or {}).get("captured_at"):
         return None
     return run.to_dict()
@@ -101,7 +109,7 @@ def overwrite_version(submission: Submission, data: dict, user_id: str):
     version_ids = [item.id for item in submission.versions]
     if version_ids:
         for run in EvaluationRun.query.filter(EvaluationRun.submission_version_id.in_(version_ids)).all():
-            if run.status in {"queued", "running", "completed"}:
+            if run.purpose == "submission" and run.status in {"queued", "running", "completed"}:
                 run.status = "superseded"
                 run.lease_hash = None
                 run.api_token_hash = None
@@ -126,6 +134,7 @@ def overwrite_version(submission: Submission, data: dict, user_id: str):
         "readme_md": data.get("readme_md", ""),
         "fields": data.get("fields", {}),
         "captured_at": now.isoformat(),
+        "evaluation_run_id": data.get("evaluation_run_id") if status == "submitted" else None,
     }
     if version:
         version.version = 1
@@ -229,14 +238,10 @@ def submit_work():
     # Serialize quota reads, first submissions and overwrites with policy saves.
     lock_problem(problem.id)
     db.session.refresh(problem)
-    if status == "submitted" and problem.evaluation_config.get("adapter") == "robot-arm-agent-v1" and not problem.runtime:
+    if status == "submitted" and problem.evaluation_config.get("adapter") in {"robot-arm-agent-v1", "libero-agent-v1"} and not problem.runtime:
         db.session.rollback()
         return jsonify({"error": "组织方尚未配置机械臂仿真环境与私有场景，请稍后提交。"}), 409
     submission = Submission.query.filter_by(problem_id=problem.id, team_id=team.id).populate_existing().first()
-    budget = evaluation_budget(problem, submission)
-    if status == "submitted" and budget["enabled"] and budget["remaining_runs"] == 0:
-        db.session.rollback()
-        return jsonify({"error": "evaluation test limit reached", "evaluation_budget": budget}), 429
     retained, retained_error = retained_assets(data, submission)
     if retained_error:
         return retained_error
@@ -244,6 +249,23 @@ def submit_work():
         validate_submission_materials(problem.submission_schema or {}, data, [*staged, *retained], status == "submitted", Path(current_app.config["UPLOAD_FOLDER"]))
     except ValueError as validation_error:
         return jsonify({"error": str(validation_error)}), 400
+    # Formal submission selects an already-completed private trial. It never
+    # queues another job or charges the team's testing budget.
+    if status == "submitted" and problem.evaluation_config:
+        adapter = adapters().get(problem.evaluation_config["adapter"])
+        if not adapter:
+            return jsonify({"error": "evaluation adapter is no longer registered"}), 409
+        extension = adapter["submission"]["extension"]
+        packages = [asset for asset in [*staged, *retained] if asset.original_name.lower().endswith("." + extension)]
+        if len(packages) != 1:
+            return jsonify({"error": f"exactly one .{extension} evaluation package is required"}), 400
+        package_path = Path(current_app.config["UPLOAD_FOLDER"]) / packages[0].storage_name
+        if not package_path.is_file():
+            return jsonify({"error": "retained submission asset is unavailable"}), 409
+        selected = db.session.get(EvaluationRun, data.get("evaluation_run_id")) if isinstance(data.get("evaluation_run_id"), str) else None
+        selection_error = selected_result_error(selected, problem, team.id, package_path)
+        if selection_error:
+            return jsonify({"error": selection_error}), 409
     if not submission:
         submission = Submission(problem=problem, team=team, title=data["title"])
         db.session.add(submission)
@@ -271,37 +293,6 @@ def submit_work():
             visibility=visibility,
         ))
         db.session.delete(staged_asset)
-    evaluation_config = problem.evaluation_config or {}
-    if status == "submitted" and evaluation_config:
-        available = {item.strip() for item in current_app.config["EVALUATION_ENABLED_ADAPTERS"].split(",") if item.strip()}
-        if evaluation_config["adapter"] not in available or not current_app.config["EVALUATION_WORKER_TOKEN"]:
-            db.session.rollback()
-            return jsonify({"error": "evaluation adapter is not connected"}), 503
-        adapter = adapters().get(evaluation_config["adapter"])
-        if not adapter:
-            db.session.rollback()
-            return jsonify({"error": "evaluation adapter is no longer registered"}), 409
-        extension = adapter["submission"]["extension"]
-        # Overwrite removes old assets; reload the relationship before checking
-        # the new package so an uploaded replacement isn't counted twice.
-        db.session.flush()
-        db.session.expire(version, ["assets"])
-        packages = [asset for asset in version.assets if asset.original_name.lower().endswith("." + extension)]
-        if len(packages) != 1:
-            db.session.rollback()
-            return jsonify({"error": f"exactly one .{extension} evaluation package is required"}), 400
-        db.session.flush()
-        db.session.add(EvaluationRun(
-            problem=problem, submission_version=version,
-            runtime_snapshot=deepcopy(problem.runtime.config) if problem.runtime else None,
-            config_snapshot={**evaluation_config, "metric_definitions": [metric for metric in adapter["metrics"] if metric["key"] in evaluation_config["metrics"]]},
-            submission_snapshot={
-                "captured_at": version.snapshot["captured_at"], "asset_id": packages[0].id,
-                "asset_name": packages[0].original_name,
-            },
-            status="queued",
-        ))
-        submission.evaluation_runs_used += 1
     audit("submission.overwritten", "submission", submission.id, {
         "status": version.status,
         "asset_count": len(staged) + len(retained),
@@ -534,21 +525,28 @@ def save_review():
         if not evaluation or evaluation["status"] != "completed":
             return jsonify({"error": "evaluation must complete before review"}), 409
     try:
-        total_score = calculate_review_total(version.submission.problem, data["scores"], data.get("total_score"))
+        scores = dict(data["scores"])
+        scoring = (version.submission.problem.scoring_config or {}).get("performance_scoring")
+        if scoring:
+            performance = evaluation.get("performance")
+            if not performance or any(performance.get(key) != scoring[key] for key in ("preset", "criterion")):
+                return jsonify({"error": "正式结果缺少对应版本的自动表现分，请先完成测试。"}), 409
+            scores[scoring["criterion"]] = performance["score"]
+        total_score = calculate_review_total(version.submission.problem, scores, data.get("total_score"))
     except (TypeError, ValueError) as error:
         return jsonify({"error": str(error)}), 400
     review = Review.query.filter_by(submission_version_id=version.id, reviewer_id=user.id).first()
     if not review:
         review = Review(submission_version_id=version.id, reviewer_id=user.id)
         db.session.add(review)
-    review.scores = data["scores"]
+    review.scores = scores
     review.total_score = total_score
     review.feedback_md = data.get("feedback_md", "")
     review.status = data.get("status", "submitted")
     db.session.flush()
     audit("review.saved", "review", review.id, {"submission_version_id": version.id})
     db.session.commit()
-    return jsonify({"id": review.id, "status": review.status, "total_score": review.total_score}), 201
+    return jsonify({"id": review.id, "status": review.status, "total_score": review.total_score, "scores": review.scores}), 201
 
 
 @submissions_bp.get("/review-queue")

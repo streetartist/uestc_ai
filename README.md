@@ -112,6 +112,8 @@ python -m flask --app backend/app.py db upgrade
 
 ## 验证
 
+使用`package.json`中指定的pnpm 10.18.2，与CI保持一致；不要用其他主版本隐式重装依赖。依赖更新后运行`pnpm audit --prod --audit-level=moderate`，并提交对应锁文件。
+
 ```bash
 pnpm lint
 pnpm test

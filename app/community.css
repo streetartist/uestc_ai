@@ -119,3 +119,54 @@
   .community-filters .community-search { flex-basis: 100%; }
   .community-tabs > :is(button, a) { padding-inline: 11px; font-size: 14px; }
 }
+
+.trial-panel { min-width: 0; border: 1px solid var(--line); padding: 24px; background: var(--surface); display: grid; gap: 14px; }
+.trial-panel > header { display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+.trial-panel h3, .trial-panel h4, .trial-panel p { margin: 0; }
+.trial-panel h3 { font-size: 23px; }
+.trial-panel h4 { font-size: 16px; }
+.trial-panel p { color: var(--muted); font-size: 14px; }
+.trial-panel > small { color: var(--quiet); font-size: 12px; }
+.trial-budget { display: flex; flex-wrap: wrap; gap: 12px 28px; padding: 12px 16px; background: var(--paper-2); font-size: 14px; }
+.trial-history-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; border-top: 1px solid var(--line); padding-top: 18px; margin-top: 6px; }
+.trial-history-heading .text-button { display: inline-flex; align-items: center; gap: 7px; padding: 0; font-size: 13px; }
+.trial-empty { padding: 20px; border: 1px dashed var(--line-dark); font-size: 14px; color: var(--quiet); }
+.trial-history { display: grid; gap: 12px; }
+.trial-history > article { min-width: 0; border: 1px solid var(--line); }
+.trial-history > article.selected { border-color: var(--sage); }
+.trial-record { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; }
+.trial-record-info { position: relative; display: grid; gap: 7px; flex: 1; min-width: 0; padding: 0 26px 0 0; text-align: left; border: 0; color: var(--ink); background: transparent; cursor: pointer; }
+.trial-record-info > strong { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 15px; }
+.trial-record-info > span { font-size: 12px; color: var(--quiet); overflow-wrap: anywhere; }
+.trial-record-info > svg { position: absolute; right: 0; top: 6px; }
+.trial-record .outline-button { flex-shrink: 0; padding: 8px 12px; min-height: 36px; font-size: 13px; }
+.trial-status { padding: 3px 8px; background: var(--paper-2); font-size: 12px; font-weight: normal; }
+.trial-status.failed { color: #96502e; background: #f4ece3; }
+.trial-status.completed { color: var(--coral-dark); }
+.trial-history .evaluation-results { margin: 0; padding: 20px; border: 0; border-top: 1px solid var(--line); }
+.trial-selection-note { padding-top: 8px; }
+@media (max-width: 680px) {
+  .submission-decision { flex-direction: column; align-items: stretch; }
+  .submission-decision > div { min-width: 0; }
+  .submission-decision .submission-actions { justify-content: flex-start; flex-wrap: wrap; }
+  .trial-panel { padding: 18px; }
+  .trial-record { align-items: flex-start; flex-direction: column; }
+  .trial-record-info { width: 100%; }
+  .trial-budget { gap: 10px 16px; padding: 12px; }
+  .trial-panel .evaluation-results dl { grid-template-columns: minmax(0, 1fr); }
+}
+.checkpoint-progress { margin-top: 48px; border-top: 1px solid var(--border, #dbe3d6); padding-top: 28px; }
+.checkpoint-progress > header p, .checkpoint-form > p { color: var(--muted, #67786d); }
+.checkpoint-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0 18px; }
+.checkpoint-tabs button { border: 1px solid #dbe3d6; padding: 12px 18px; background: transparent; color: #334c3d; cursor: pointer; }
+.checkpoint-tabs button.active { background: #263f2f; color: white; border-color: #263f2f; }
+.checkpoint-form { padding: 28px; border: 1px solid #dbe3d6; background: #fffefa; max-width: 1040px; min-width: 0; }
+.checkpoint-form header, .checkpoint-footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.checkpoint-form .form-field { margin: 20px 0; }
+.checkpoint-form input, .checkpoint-form textarea { width: 100%; min-width: 0; }
+.checkpoint-footer span { color: #67786d; font-size: 14px; }
+.checkpoint-feedback { border-left: 3px solid #78966e; padding: 16px 20px; background: #edf3e8; margin-top: 24px; }
+.checkpoint-links, .evaluation-evidence { display: flex; flex-wrap: wrap; gap: 12px 20px; margin: 16px 0; }
+.evaluation-evidence h4 { flex-basis: 100%; }
+.checkpoint-review-list { display: grid; gap: 24px; margin-top: 24px; }
+@media (max-width: 640px) { .checkpoint-form { padding: 18px; } .checkpoint-tabs button { flex: 1 1 100%; text-align: left; } }

@@ -68,6 +68,12 @@ def create_competition():
         return error
     if Competition.query.filter_by(slug=data["slug"]).first():
         return jsonify({"error": "competition slug already exists"}), 409
+    if isinstance(data.get("config"), dict) and "checkpoints" in data["config"]:
+        from ..progress import validate_checkpoints
+        try:
+            data["config"]["checkpoints"] = validate_checkpoints(data["config"]["checkpoints"])
+        except ValueError as validation_error:
+            return jsonify({"error": str(validation_error)}), 400
     item = Competition(slug=data["slug"], name=data["name"], summary=data["summary"], status=data.get("status", "draft"), config=data.get("config", {}))
     db.session.add(item)
     db.session.flush()
@@ -117,6 +123,8 @@ def create_problem(track_id: str):
     try:
         scoring_config = validate_scoring_config(data.get("scoring_config"))
         evaluation_config = validate_evaluation_config(data.get("evaluation_config"))
+        from ..performance_scoring import validate_problem_scoring
+        validate_problem_scoring(scoring_config, evaluation_config, data.get("judging_schema", {}))
         data["submission_schema"] = validate_submission_schema(data.get("submission_schema"))
     except ValueError as validation_error:
         return jsonify({"error": str(validation_error)}), 400

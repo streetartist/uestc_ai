@@ -34,7 +34,16 @@ class WujieCompetitionTests(unittest.TestCase):
                 problem = response.get_json()
                 self.assertEqual(problem["status"], "draft")
                 self.assertEqual(problem["scoring_config"]["external_weight_percent"], 50)
-                self.assertEqual(problem["judging_schema"]["rubric"], {"模型或智能体实际表现": .8, "研究报告": .2})
+                self.assertEqual(problem["judging_schema"]["rubric"], {"模型或智能体实际表现": .8, "技术路线说明": .2})
+                self.assertEqual(next(a for a in problem["submission_schema"]["attachments"] if a["key"] == "research_report")["min_count"], 0)
+                if track["slug"] == "world-exploration":
+                    scenes = track["setup"]["runtime"]["scenarios"]
+                    self.assertEqual([s["max_steps"] for s in scenes], [600, 1500, 3000])
+                    self.assertEqual([len(s["goals"]) for s in scenes], [3, 4, 3])
+                    self.assertTrue(all(s["initial_inventory"] == [] for s in scenes))
+                if track["slug"] == "embodied-agent":
+                    self.assertEqual(problem["evaluation_config"]["adapter"], "libero-agent-v1")
+                    self.assertEqual(problem["scoring_config"]["performance_scoring"]["preset"], "wujie-libero-v1")
                 self.assertEqual(self.member.get(f"/api/problems/{problem['slug']}").status_code, 404)
                 self.assertNotIn("scenarios", problem["evaluation_config"])
             detail = self.admin.get(f"/api/competitions/{competition['slug']}").get_json()

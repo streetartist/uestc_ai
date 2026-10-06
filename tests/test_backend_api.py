@@ -306,16 +306,13 @@ class PlatformApiTestCase(unittest.TestCase):
         fields = {"problem_id": problem["id"], "team_id": team["id"], "title": "Observer work", "readme_md": "# Demo", "status": "submitted"}
         missing = self.member.post("/api/submissions", json=fields)
         self.assertEqual(missing.status_code, 400, missing.get_json())
-        submitted = self.member.post("/api/submissions", json={**fields, "staged_asset_ids": [staged.get_json()["id"]]})
-        self.assertEqual(submitted.status_code, 201, submitted.get_json())
-        version_id = submitted.get_json()["version"]["id"]
-        public = self.member.get(f"/api/works/{submitted.get_json()['id']}").get_json()
-        self.assertEqual(public["evaluation"]["status"], "queued")
+        trial = self.member.post(f"/api/problems/{problem['id']}/evaluation-runs", json={**fields, "staged_asset_ids": [staged.get_json()["id"]]})
+        self.assertEqual(trial.status_code, 201, trial.get_json())
+        version_id = trial.get_json()["submission_version_id"]
+        pending = self.member.post("/api/submissions", json={**fields, "staged_asset_ids": [staged.get_json()["id"]], "evaluation_run_id": trial.get_json()["id"]})
+        self.assertEqual(pending.status_code, 409)
         self.login(self.reviewer, "reviewer@uestc.ai")
         review_payload = {"submission_version_id": version_id, "scores": {"system": 80}, "total_score": 80}
-        pending_review = self.reviewer.post("/api/reviews", json=review_payload)
-        self.assertEqual(pending_review.status_code, 409, pending_review.get_json())
-        self.assertEqual(pending_review.get_json()["error"], "evaluation must complete before review")
         self.assertEqual(self.admin.patch(f"/api/manage/problems/{problem['id']}", json={"evaluation_config": {}}).status_code, 409)
 
         denied = self.app.test_client().post("/api/evaluation-worker/claim")
@@ -366,12 +363,16 @@ class PlatformApiTestCase(unittest.TestCase):
         self.assertEqual(completed.get_json()["episodes"][0]["metrics"], {"task_success": 100, "deaths": 0})
         self.assertEqual(completed.get_json()["api_calls_used"], 1)
         self.assertNotIn("total_score", completed.get_json())
+        submitted = self.member.post("/api/submissions", json={**fields, "staged_asset_ids": [staged.get_json()["id"]], "evaluation_run_id": trial.get_json()["id"]})
+        self.assertEqual(submitted.status_code, 201, submitted.get_json())
+        public = self.member.get(f"/api/works/{submitted.get_json()['id']}").get_json()
         queue = self.reviewer.get("/api/review-queue").get_json()
         self.assertEqual(next(item for item in queue if item["id"] == version_id)["evaluation"]["metrics"], {"task_success": 50, "deaths": 1})
         self.assertEqual(self.reviewer.post("/api/reviews", json=review_payload).status_code, 201)
         public_result = self.app.test_client().get(f"/api/works/{submitted.get_json()['id']}")
         self.assertEqual(public_result.status_code, 200)
-        self.assertEqual(public_result.get_json()["evaluation"]["metrics"], {"task_success": 50, "deaths": 1})
+        self.assertIsNone(public_result.get_json()["evaluation"])
+        self.assertEqual(public["evaluation"]["metrics"], {"task_success": 50, "deaths": 1})
         with self.app.app_context():
             from platform_api.models import Score, ScoreBatch
             self.assertEqual(Score.query.count(), 0)
@@ -380,10 +381,10 @@ class PlatformApiTestCase(unittest.TestCase):
             "file": (io.BytesIO(b"different package"), "replacement.zip"),
         }, content_type="multipart/form-data")
         self.assertEqual(appended.status_code, 409)
-        latest = self.member.post("/api/submissions", json={**fields, "title": "Updated", "retained_asset_ids": [public["assets"][0]["id"]]})
+        latest = self.member.post("/api/submissions", json={**fields, "title": "Updated", "retained_asset_ids": [public["assets"][0]["id"]], "evaluation_run_id": trial.get_json()["id"]})
         self.assertEqual(latest.status_code, 201, latest.get_json())
         history = self.member.get(f"/api/submission-versions/{version_id}/evaluation-runs").get_json()
-        self.assertEqual([run["status"] for run in history], ["queued", "superseded"])
+        self.assertEqual([run["status"] for run in history], ["completed"])
 
     def test_trusted_adapter_manifest_adds_configurable_metrics(self):
         manifest_dir = Path(self.runtime.name) / "adapters"

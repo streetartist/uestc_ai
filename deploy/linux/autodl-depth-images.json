@@ -1,0 +1,283 @@
+{
+  "release_date": "2026-10-06",
+  "competition": "wujie-cup-2026",
+  "problem": "wujie-human-activity-recognition",
+  "gpu_acceptance": "NVIDIA GeForce RTX 4080 SUPER 32GB",
+  "execution": "autodl-native",
+  "environment": {
+    "python": "3.12.3",
+    "torch": "2.8.0+cu128",
+    "torchvision": "0.23.0+cu128",
+    "numpy": "2.3.2",
+    "psutil": "6.1.1",
+    "safetensors": "0.5.3",
+    "Pillow": "10.4.0"
+  },
+  "source": {
+    "dataset": "Kevin-Pal/CUHK-X_Small_Model_Track",
+    "url": "https://huggingface.co/datasets/Kevin-Pal/CUHK-X_Small_Model_Track",
+    "raw_archive_bytes": 44622809265,
+    "raw_archive_parts_sha256_verified": 9,
+    "class_mapping_sha256": "09f5794978faedb2bb478f41de0bf8545bf346e2b49b85eabb9504e238d0b7cb"
+  },
+  "preprocessing": {
+    "input": "Depth_Color PNG (non-RGB colorized depth)",
+    "frames": 16,
+    "size": [
+      112,
+      112
+    ],
+    "dtype": "float32",
+    "layout": "T,1,H,W",
+    "range": [
+      0,
+      1
+    ],
+    "conversion": "Pillow luminance and bilinear resize",
+    "split_subject_counts": {
+      "train": 12,
+      "validation": 3,
+      "test": 3
+    },
+    "all_splits_cover_40_classes": true,
+    "cross_split_duplicate_check": "passed"
+  },
+  "prepared_archive_sha256": "3a022b03a06078e2695cc5fcbf39acfc47691fd1c03d0034d97bba04d4281521",
+  "manifest_sha256": {
+    "train": "b1da519efcaffea98e2b153f39a3195bfa902617826135e866bbca289380ed28",
+    "validation": "6e5c15ff25b726d4925c4e58820204746db83551e10156a303571c0d84b6baa5",
+    "test": "32b5e9e0f09b578757dcbc3ba763020d558bfdbce7fbaad6151d936a6a10b303"
+  },
+  "redistribution_authorization": {
+    "status": "organizer_confirmed",
+    "confirmed_on": "2026-10-06",
+    "scope": "participants of this competition; organizer evaluation image remains private"
+  },
+  "images": [
+    {
+      "role": "organizer",
+      "name": "uestc-wujie-depth-4080-organizer-v4-data",
+      "image_uuid": "image-042030ef49",
+      "status": "finished",
+      "image_size": 655206400,
+      "image_size_unit": "bytes_incremental_to_base",
+      "embedded_samples": {
+        "test": 470
+      },
+      "data_directory": "/opt/uestc-classification/datasets/wujie-depth-v1",
+      "contains_test_labels": true,
+      "contains_platform_credentials": false,
+      "build_instance_acceptance": {
+        "status": "completed",
+        "episodes": [
+          {
+            "accuracy": 10.212765957446809,
+            "macro_f1": 0.4633204633204633,
+            "latency_ms": 1.9812077553922942,
+            "peak_vram_mb": 389.0
+          }
+        ],
+        "real_official_data": true,
+        "test_samples": 470,
+        "embedded_data": true,
+        "local_asset_server": true,
+        "production_api_connected": false,
+        "seconds": 6.028743527829647
+      },
+      "restored_image_acceptance": {
+        "status": "passed",
+        "restored_image": "image-042030ef49",
+        "embedded_test_samples": 470,
+        "data_manifest_verified": true,
+        "runtime_seal_verified": true,
+        "gpu": "NVIDIA GeForce RTX 4080 SUPER, 32760 MiB, GPU-a5845121-48ba-b188-0904-be0e792418cc",
+        "cuda": true,
+        "acceptance_model": "random_initialization_interface_fixture",
+        "system_disk": "Filesystem      Size  Used Avail Use% Mounted on\noverlay          30G  643M   29G   3% /"
+      },
+      "restored_api_workflow_acceptance": {
+        "acceptance_model": "random_initialization_interface_fixture",
+        "synthetic_only": false,
+        "real_samples": 470,
+        "restored_image": true,
+        "isolated_api_workflow": true,
+        "production_api_workflow": false,
+        "gpu": "RTX 4080 SUPER 32GB",
+        "status": "completed",
+        "metrics": {
+          "accuracy": 1.914894,
+          "latency_ms": 3.634641,
+          "macro_f1": 0.093946,
+          "peak_vram_mb": 389.0
+        },
+        "budget": {
+          "enabled": true,
+          "max_team_runs": 2,
+          "problem_id": "5e648ff5-36c3-43ed-a729-ec21ab57e6d2",
+          "remaining_runs": 1,
+          "team_id": "fe207fc1-f49a-4baa-8fad-346087fa4127",
+          "time_seconds": 1800,
+          "used_runs": 1
+        },
+        "team_can_view": true,
+        "reviewer_can_view_selected_result": true,
+        "formal_submission_did_not_charge_extra": true,
+        "anonymous_cannot_view": true
+      }
+    },
+    {
+      "role": "participant",
+      "name": "uestc-wujie-depth-4080-participant-v4-data",
+      "image_uuid": "image-82e8bfacc6",
+      "status": "finished",
+      "image_size": 2255953920,
+      "image_size_unit": "bytes_incremental_to_base",
+      "embedded_samples": {
+        "train": 1995,
+        "validation": 466
+      },
+      "data_directory": "/opt/uestc-classification/training-data",
+      "contains_test_labels": false,
+      "contains_platform_credentials": false,
+      "build_instance_acceptance": {
+        "status": "passed",
+        "embedded_training_samples": 1995,
+        "embedded_validation_samples": 466,
+        "cuda": true,
+        "packaged_predictions_checked": 8,
+        "prediction_classes": 40,
+        "contains_test_data": false,
+        "training": {
+          "epoch": 1,
+          "training_loss": 3.4869168102293084,
+          "training_seconds": 1.6971620097756386,
+          "samples_per_second": 1175.4917848200803,
+          "validation_accuracy": 11.802575107296137
+        }
+      },
+      "restored_image_acceptance": {
+        "status": "passed",
+        "restored_image": "image-82e8bfacc6",
+        "embedded_samples": {
+          "train": 1995,
+          "validation": 466
+        },
+        "data_manifests_verified": true,
+        "runtime_seal_verified": true,
+        "contains_test_data": false,
+        "contains_worker_credentials": false,
+        "cuda": true,
+        "gpu": "NVIDIA GeForce RTX 4080 SUPER, 32760 MiB",
+        "system_disk": "Filesystem      Size  Used Avail Use% Mounted on\noverlay          30G  2.2G   28G   8% /"
+      },
+      "restored_training_acceptance": {
+        "status": "passed",
+        "embedded_training_samples": 1995,
+        "embedded_validation_samples": 466,
+        "cuda": true,
+        "packaged_predictions_checked": 8,
+        "prediction_classes": 40,
+        "contains_test_data": false,
+        "training": {
+          "epoch": 1,
+          "training_loss": 3.4869168102293084,
+          "training_seconds": 2.3636784590780735,
+          "samples_per_second": 844.0234298103844,
+          "validation_accuracy": 11.802575107296137
+        }
+      }
+    }
+  ],
+  "production_worker_connected": true,
+  "notes": [
+    "Original 44.6 GB multimodal archives are not embedded; images contain the verified non-RGB competition split.",
+    "Acceptance baseline metrics are interface evidence, not competition scores or model-quality claims.",
+    "Source labels are public: this split uses code review and is not a strictly independent blind test.",
+    "Images are in the organizer AutoDL account; another account needs its own authorized image save.",
+    "Do not expose the organizer image, SSH or shared file storage to participant root accounts."
+  ],
+  "production_worker_state": "automatic_queue_wake_idle_shutdown",
+  "production_competition_trial_tested": false,
+  "production_runtime": {
+    "image": "image-042030ef49",
+    "dataset": "wujie-depth-v1",
+    "worker_id": "wujie-classification-v4-formal",
+    "instance_uuid": "pro-7912ff659683"
+  },
+  "training_policy": {
+    "gpu": "RTX 4080 SUPER 32GB",
+    "image": "image-82e8bfacc6",
+    "gpu_spec_uuid": "v-32g-p",
+    "cuda_v_from": 128,
+    "gpu_hours_per_team": 10,
+    "max_gpu_seconds": 36000,
+    "max_cost_millis": 16800,
+    "hourly_price_millis": 1680,
+    "production_compute_monitor": "online"
+  },
+  "automatic_judge": {
+    "instance_uuid": "pro-7912ff659683",
+    "idle_seconds": 120,
+    "boot_seconds": 600,
+    "hard_uptime_seconds": 14400,
+    "drain_after_seconds": 10800,
+    "service": "uestc-ai-compute",
+    "training_grants_independent": true,
+    "creates_new_instances": false,
+    "acceptance": {
+      "status": "completed",
+      "real_samples": 470,
+      "trained_model": false,
+      "production_queue": true,
+      "artifact_names": [
+        "scene-1-classification.json"
+      ],
+      "attempts": 1,
+      "seconds": 30.1,
+      "states": [
+        {
+          "seconds": 0.1,
+          "status": [
+            "off",
+            "shutdown",
+            "queued"
+          ]
+        },
+        {
+          "seconds": 5.1,
+          "status": [
+            "starting",
+            "shutdown",
+            "queued"
+          ]
+        },
+        {
+          "seconds": 10.1,
+          "status": [
+            "ready",
+            "running",
+            "queued"
+          ]
+        },
+        {
+          "seconds": 15.1,
+          "status": [
+            "ready",
+            "running",
+            "running"
+          ]
+        },
+        {
+          "seconds": 30.1,
+          "status": [
+            "ready",
+            "running",
+            "completed"
+          ]
+        }
+      ],
+      "temporary_records_cleaned": true,
+      "idle_shutdown_verified": true
+    }
+  }
+}

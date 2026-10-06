@@ -7,6 +7,7 @@ from flask import Blueprint, jsonify, request
 
 from ..extensions import db
 from ..ai_models import AIGrant
+from ..judge_models import JudgePool
 from ..ai_quotas import lock_competition, lock_problem, remove_unused_grants
 from ..models import (
     AuditLog,
@@ -175,6 +176,9 @@ def update_competition(competition_id: str):
         if duplicate:
             return jsonify({"error": "competition slug already exists"}), 409
     try:
+        if isinstance(data.get("config"), dict) and "checkpoints" in data["config"]:
+            from ..progress import validate_checkpoints
+            data["config"]["checkpoints"] = validate_checkpoints(data["config"]["checkpoints"])
         update_fields(competition, data, COMPETITION_FIELDS)
     except (TypeError, ValueError) as error:
         return jsonify({"error": str(error)}), 400
@@ -195,6 +199,9 @@ def delete_competition(competition_id: str):
         or ScoreBatch.query.filter_by(competition_id=competition.id).first()
     ):
         return jsonify({"error": "competition has participation records"}), 409
+    lock_competition(competition.id)
+    if JudgePool.query.join(Problem).join(Track).filter(Track.competition_id == competition.id).first():
+        return jsonify({"error": "赛事已绑定专用 GPU 测评实例，请先停用并解除测评绑定。"}), 409
     audit("competition.deleted", "competition", competition.id, {"name": competition.name, "slug": competition.slug})
     db.session.delete(competition)
     db.session.commit()
@@ -230,6 +237,8 @@ def delete_track(track_id: str):
     lock_competition(track.competition_id)
     for problem_id in sorted(problem.id for problem in track.problems):
         lock_problem(problem_id)
+    if JudgePool.query.join(Problem).filter(Problem.track_id == track.id).first():
+        return jsonify({"error": "赛道已绑定专用 GPU 测评实例，请先停用并解除测评绑定。"}), 409
     from ..compute import remove_unused_compute
     if not remove_unused_compute(problem_ids=[problem.id for problem in track.problems]):
         return jsonify({"error": "track has compute records"}), 409
@@ -287,6 +296,17 @@ def update_problem(problem_id: str):
             return jsonify({"error": str(error)}), 400
         if Submission.query.filter_by(problem_id=problem.id).first() and fixed_evaluation_rules(data["evaluation_config"]) != fixed_evaluation_rules(problem.evaluation_config):
             return jsonify({"error": "evaluation rules cannot change after submissions"}), 409
+    from ..performance_scoring import validate_problem_scoring
+    try:
+        validate_problem_scoring(data.get("scoring_config", problem.scoring_config),
+            data.get("evaluation_config", problem.evaluation_config), data.get("judging_schema", problem.judging_schema))
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    if Submission.query.filter_by(problem_id=problem.id).first() and (
+        data.get("scoring_config", problem.scoring_config).get("performance_scoring") != problem.scoring_config.get("performance_scoring")
+        or (problem.scoring_config.get("performance_scoring") and data.get("judging_schema", problem.judging_schema) != problem.judging_schema)
+    ):
+        return jsonify({"error": "已有测试或提交，不能更改自动表现分公式或评分权重。"}), 409
     update_fields(problem, data, PROBLEM_FIELDS)
     audit("problem.updated", "problem", problem.id, {"fields": sorted(set(data) & PROBLEM_FIELDS)})
     db.session.commit()
@@ -304,6 +324,8 @@ def delete_problem(problem_id: str):
     lock_competition(problem.track.competition_id)
     lock_problem(problem.id)
     from ..compute import remove_unused_compute
+    if JudgePool.query.filter_by(problem_id=problem.id).first():
+        return jsonify({"error": "题目已绑定专用 GPU 测评实例，请先停用并解除测评绑定。"}), 409
     if not remove_unused_compute(problem_ids=[problem.id]):
         return jsonify({"error": "problem has compute records"}), 409
     if not remove_unused_grants(AIGrant.problem_id == problem.id):

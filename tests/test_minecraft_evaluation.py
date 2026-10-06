@@ -224,7 +224,7 @@ class MinecraftEvaluationTests(unittest.TestCase):
             job = {
                 "id": "test-minecraft", "asset_url": "/asset", "lease_token": "worker-lease", "api_token": "agent-api-token",
                 "config": {"adapter": "minecraft-agent-v1", "task": "open-world",
-                           "resources": {"cpus": 2, "memory_mb": 4096, "time_seconds": 90, "episodes": 1},
+                           "resources": {"cpus": 2, "memory_mb": 2048, "time_seconds": 90, "episodes": 1},
                            "api": {"enabled": False, "max_calls": 0}, "metrics": ["task_success"]},
             }
             image = "registry.example/trusted@sha256:" + "a" * 64
@@ -250,9 +250,11 @@ class MinecraftEvaluationTests(unittest.TestCase):
                 return SimpleNamespace(returncode=0)
 
             with patch.object(evaluation_worker, "download") as download, \
+                    patch('evaluation_docker_limits.node_memory_budget', return_value=6144), \
                     patch.object(evaluation_worker.subprocess, "Popen", side_effect=start_controller), \
                     patch.object(evaluation_worker.subprocess, "run", side_effect=run_docker), \
-                    patch.object(evaluation_worker, "heartbeat"):
+                    patch.object(evaluation_worker, "heartbeat"), \
+                    patch.object(evaluation_worker, "upload_evidence_file") as upload:
                 def write_package(_base, _path, _lease, destination):
                     destination.write_bytes(b"test package")
 
@@ -260,6 +262,7 @@ class MinecraftEvaluationTests(unittest.TestCase):
                 result = evaluation_worker.execute("http://localhost:5000/api", job, {"minecraft-agent-v1": image},
                                                    "", "", "", agent_image, str(scenarios))
             self.assertEqual(result["episodes"], [{"task_success": 100}])
+            self.assertEqual(upload.call_count, 2)
             containers = [command for command in commands if command[:2] == ["docker", "run"]]
             self.assertEqual(len(containers), 2)
             self.assertNotIn("/input/package.zip", " ".join(containers[0]))
@@ -269,6 +272,10 @@ class MinecraftEvaluationTests(unittest.TestCase):
             self.assertNotIn("--read-only", containers[0])
             self.assertIn("--pids-limit=512", containers[0])
             self.assertIn("--pids-limit=256", containers[1])
+            self.assertIn('--memory=4096m', containers[0])
+            self.assertIn('--memory-swap=4096m', containers[0])
+            self.assertIn('--memory=2048m', containers[1])
+            self.assertIn('--memory-swap=2048m', containers[1])
             self.assertIn("EVALUATION_SOCKET_TIMEOUT=90", containers[1])
             self.assertNotIn("worker-lease", " ".join(containers[1]))
 

@@ -23,5 +23,9 @@ RUN --mount=type=cache,id=uestc-minecraft-gradle-v1,target=/var/cache/minedojo,s
     set -e; mkdir -p /root/.gradle; cp -a /var/cache/minedojo/. /root/.gradle/; \
     trap 'cp -a /root/.gradle/. /var/cache/minedojo/' EXIT; \
     MINEDOJO_DEBUG_LOG=1 xvfb-run -a python3 -u -c "import minedojo; env=minedojo.make(task_id='open-ended', image_size=(160,256), world_seed=1042); env.reset(); env.close()"
+RUN python3 /runner/evaluation_adapters/minecraft/prepare_offline.py
+RUN cd /usr/local/lib/python3.9/site-packages/minedojo/sim/Malmo/Minecraft \
+    && ./gradlew --offline shadowJar --no-daemon \
+    && test -s build/libs/MalmoMod-0.37.0-fat.jar
 
 CMD ["xvfb-run", "-a", "python3", "-m", "evaluation_adapters.minecraft_runner"]

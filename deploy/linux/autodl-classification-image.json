@@ -1,0 +1,22 @@
+{
+  "name": "uestc-4080-eval-v1-clean",
+  "image_uuid": "image-ad5a8d1cf9",
+  "status": "finished",
+  "validated_on": "2026-10-06",
+  "gpu_spec_uuid": "v-32g-p",
+  "gpu": "NVIDIA GeForce RTX 4080 SUPER 32GB",
+  "execution": "autodl-native",
+  "environment": {
+    "python": "3.8.10",
+    "torch": "2.0.0+cu118",
+    "torchvision": "0.15.1+cu118",
+    "numpy": "1.24.2",
+    "psutil": "6.1.1",
+    "safetensors": "0.5.3"
+  },
+  "formal_dataset_installed": false,
+  "contains_platform_credentials": false,
+  "contains_labels": false,
+  "restored_image_gpu_acceptance": "passed",
+  "note": "Private image belongs to the configured organizer AutoDL account. Rebuild and update the UUID for another account."
+}

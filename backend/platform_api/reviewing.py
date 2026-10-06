@@ -50,6 +50,11 @@ def validate_scoring_config(value) -> dict:
     config["external_weight_percent"] = weight
     if config.get("review_score_mode", "sum") not in {"sum", "weighted"}:
         raise ValueError("invalid review score mode")
+    if config.get("performance_scoring") is not None:
+        from .performance_scoring import validate_performance_scoring
+        validate_performance_scoring(config["performance_scoring"])
+        if config.get("review_score_mode") != "weighted":
+            raise ValueError("自动表现分须配合加权评分。")
     return config
 
 

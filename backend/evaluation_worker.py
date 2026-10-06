@@ -23,11 +23,16 @@ import urllib.parse
 import urllib.request
 from uuid import uuid4
 from pathlib import Path
+from evaluation_evidence import upload as upload_evidence_file
+from evaluation_docker_limits import check_memory_budget, docker_limits, failure_message, node_memory_budget
+
+WORKER_USER_AGENT = "Mozilla/5.0 UESTC-EvaluationCheck"
 
 
 def request_json(base: str, path: str, method="GET", body=None, headers=None):
     data = json.dumps(body).encode("utf-8") if body is not None else None
     request = urllib.request.Request(base + path, data=data, headers={
+        "User-Agent": WORKER_USER_AGENT,
         **({"Content-Type": "application/json"} if data is not None else {}),
         **(headers or {}),
     }, method=method)
@@ -44,7 +49,7 @@ def download(base: str, path: str, lease: str, destination: Path):
     target = urllib.parse.urlsplit(url)
     if (target.scheme, target.netloc) != (origin.scheme, origin.netloc):
         raise RuntimeError("evaluation asset must use the API origin")
-    request = urllib.request.Request(url, headers={"X-Evaluation-Lease": lease})
+    request = urllib.request.Request(url, headers={"X-Evaluation-Lease": lease, "User-Agent": WORKER_USER_AGENT})
     with urllib.request.urlopen(request, timeout=60) as response, destination.open("wb") as target:
         while chunk := response.read(1024 * 1024):
             target.write(chunk)
@@ -92,8 +97,9 @@ def pinned_image(image: str) -> bool:
 def execute_isolated_agent(base: str, job: dict, trusted_image: str, agent_image: str,
                       scenarios_path: str, proxy_url: str, network: str, log_directory: str = ""):
     config = job["config"]
+    check_memory_budget(config)
     resources = config["resources"]
-    robot = config["adapter"] == "robot-arm-agent-v1"
+    robot = config["adapter"] in {"robot-arm-agent-v1", "libero-agent-v1"}
     label = "Robot arm" if robot else "Minecraft"
     if not pinned_image(agent_image):
         raise RuntimeError(label + " agent image requires a pinned digest")
@@ -129,12 +135,11 @@ def execute_isolated_agent(base: str, job: dict, trusted_image: str, agent_image
         ipc_volume = "minecraft-ipc-" + uuid4().hex if os.name == "nt" else None
         ipc_mount = (f"type=volume,src={ipc_volume},dst=/ipc" if ipc_volume
                      else f"type=bind,src={ipc.resolve()},dst=/ipc")
-        common = ["--rm", "--init", "--cap-drop=ALL", "--security-opt=no-new-privileges",
+        common = ["--init", "--cap-drop=ALL", "--security-opt=no-new-privileges",
                   "--label", "uestc.evaluation_run=" + job["id"],
-                  "--label", "uestc.worker_id=" + os.environ.get('EVALUATION_WORKER_ID', 'legacy'),
-                  f"--cpus={resources['cpus']}", f"--memory={resources['memory_mb']}m"]
+                  "--label", "uestc.worker_id=" + os.environ.get('EVALUATION_WORKER_ID', 'legacy')]
         controller = [
-            "docker", "run", *common, "--pids-limit=512", "--name", trusted_name, f"--user={controller_user}:{host_group}", "--network=none",
+            "docker", "run", *common, *docker_limits(config, controller=True), "--pids-limit=512", "--name", trusted_name, f"--user={controller_user}:{host_group}", "--network=none",
             # A network=none container has no IP entry for its generated name.
             # Java / Gradle still need getLocalHost() to resolve without DNS.
             "--hostname=localhost",
@@ -149,7 +154,7 @@ def execute_isolated_agent(base: str, job: dict, trusted_image: str, agent_image
             trusted_image,
         ]
         contestant = [
-            "docker", "run", *common, "--pids-limit=256", "--read-only", "--name", agent_name, "--user=65534:65534",
+            "docker", "run", *common, *docker_limits(config), "--pids-limit=256", "--read-only", "--name", agent_name, "--user=65534:65534",
             "--tmpfs=/tmp:rw,exec,nosuid,size=128m",
             "--env", f"EVALUATION_SOCKET_TIMEOUT={resources['time_seconds']}",
             "--network=" + (network if config["api"]["enabled"] else "none"),
@@ -186,7 +191,7 @@ def execute_isolated_agent(base: str, job: dict, trusted_image: str, agent_image
                     if ready:
                         break
                     if stopped.is_set() or controller_process.poll() is not None:
-                        raise RuntimeError(label + " controller exited before starting its socket")
+                        raise RuntimeError(failure_message(trusted_name, '仿真环境', label + " controller exited before starting its socket"))
                     if time.monotonic() >= ready_deadline:
                         raise subprocess.TimeoutExpired(controller, resources["time_seconds"])
                     stopped.wait(min(0.5, max(0, ready_deadline - time.monotonic())))
@@ -196,19 +201,23 @@ def execute_isolated_agent(base: str, job: dict, trusted_image: str, agent_image
                 agent_result = subprocess.run(contestant, timeout=remaining,
                                               stdout=agent_log, stderr=subprocess.STDOUT, check=False)
                 if agent_result.returncode or stopped.is_set():
-                    raise RuntimeError(label + " agent exited before evaluation completed")
+                    raise RuntimeError(failure_message(agent_name, '选手程序', label + " agent exited before evaluation completed"))
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise subprocess.TimeoutExpired(controller, resources["time_seconds"])
                 controller_process.wait(timeout=remaining)
                 if controller_process.returncode or stopped.is_set():
-                    raise RuntimeError(label + " controller did not complete")
+                    raise RuntimeError(failure_message(trusted_name, '仿真环境', label + " controller did not complete"))
             result_path = output / "result.json"
             if not result_path.is_file() or result_path.stat().st_size > 256 * 1024:
                 raise RuntimeError(label + " controller did not write a valid result")
             result = json.loads(result_path.read_text(encoding="utf-8"))
             if not isinstance(result, dict) or set(result) != {"episodes"}:
                 raise RuntimeError(label + " controller result has invalid fields")
+            if config["adapter"] in {"libero-agent-v1", "minecraft-agent-v1"}:
+                for index in range(1, resources["episodes"] + 1):
+                    for filename in ("replay.gif", "trajectory.json"):
+                        upload_evidence_file(base, job, f"scene-{index}-{filename}", output / "evidence" / str(index) / filename)
             return {"status": "completed", "episodes": result["episodes"]}
         finally:
             remove_container(agent_name)
@@ -224,7 +233,7 @@ def execute_isolated_agent(base: str, job: dict, trusted_image: str, agent_image
                                stderr=subprocess.DEVNULL, timeout=10, check=False)
             stopped.set()
             thread.join(timeout=2)
-            if robot and log_directory and (output / "evidence").is_dir():
+            if log_directory and (output / "evidence").is_dir():
                 shutil.copytree(output / "evidence", logs / "evidence", dirs_exist_ok=True)
 
 
@@ -235,12 +244,13 @@ def execute_minecraft(base, job, trusted_image, agent_image, scenarios_path, pro
 def execute(base: str, job: dict, images: dict[str, str], proxy_url: str, network: str, gpu_device: str,
             agent_image: str = "", scenarios_path: str = "", log_directory: str = ""):
     config = job["config"]
+    check_memory_budget(config)
     runtime = job.get("runtime")
     image = runtime["image"] if runtime else images.get(config["adapter"], "")
     if not pinned_image(image):
         raise RuntimeError("adapter image is not configured with a pinned digest")
     resources = config["resources"]
-    if config["adapter"] == "robot-arm-agent-v1":
+    if config["adapter"] in {"robot-arm-agent-v1", "libero-agent-v1"}:
         if not runtime:
             raise RuntimeError("Robot arm evaluation requires a problem runtime with private scenarios")
         with tempfile.TemporaryDirectory(prefix="robot-scenes-") as directory:
@@ -274,12 +284,12 @@ def execute(base: str, job: dict, images: dict[str, str], proxy_url: str, networ
         if runtime:
             (inputs / "scenarios.json").write_text(json.dumps(runtime.get("scenarios", [])), encoding="utf-8")
         command = [
-            "docker", "run", "--rm", "--name", container_name, "--init", "--read-only", "--cap-drop=ALL",
+            "docker", "run", "--name", container_name, "--init", "--read-only", "--cap-drop=ALL",
             "--label", "uestc.evaluation_run=" + job["id"],
             "--label", "uestc.worker_id=" + os.environ.get('EVALUATION_WORKER_ID', 'legacy'),
             "--security-opt=no-new-privileges", "--pids-limit=256", f"--user={runner_user}", "--hostname=localhost",
             f"--group-add={host_group}",
-            f"--cpus={resources['cpus']}", f"--memory={resources['memory_mb']}m",
+            *docker_limits(config),
             "--tmpfs=/tmp:rw,noexec,nosuid,size=256m", "--network=" + (network if config["api"]["enabled"] else "none"),
             "--mount", f"type=bind,src={inputs.resolve()},dst=/input,readonly",
             "--mount", f"type=bind,src={output.resolve()},dst=/output",
@@ -302,7 +312,7 @@ def execute(base: str, job: dict, images: dict[str, str], proxy_url: str, networ
             if stopped.is_set():
                 raise RuntimeError("worker lease could not be renewed")
             if result.returncode:
-                raise RuntimeError(f"adapter exited with status {result.returncode}")
+                raise RuntimeError(failure_message(container_name, '选手程序', f"adapter exited with status {result.returncode}"))
             path = output / "result.json"
             if not path.is_file() or path.stat().st_size > 256 * 1024:
                 raise RuntimeError("adapter did not produce a valid result file")
@@ -317,7 +327,7 @@ def execute(base: str, job: dict, images: dict[str, str], proxy_url: str, networ
             thread.join(timeout=2)
 
 
-def main():
+def run_worker():
     from dotenv import load_dotenv
     load_dotenv(Path(__file__).resolve().parents[1] / ".env")
     parser = argparse.ArgumentParser(description="Poll and execute configured evaluation adapters")
@@ -333,6 +343,7 @@ def main():
     proxy_url = os.environ.get("EVALUATION_API_PROXY_URL", "")
     network = os.environ.get("EVALUATION_NETWORK", "")
     gpu_device = os.environ.get("EVALUATION_GPU_DEVICE", "")
+    memory_budget = node_memory_budget()
     agent_image = os.environ.get("EVALUATION_AGENT_IMAGE", "")
     scenarios_path = os.environ.get("EVALUATION_MINECRAFT_SCENARIOS", "")
     supported = [adapter for adapter, image in images.items()
@@ -367,6 +378,7 @@ def main():
                 "adapters": available, "gpu": bool(gpu_device), "managed_runtime": True,
                 "api_proxy": bool(proxy_url and network), "worker_id": worker_id,
                 "legacy_adapters": supported,
+                "memory_mb": memory_budget,
             }, {"Authorization": "Bearer " + token}) if available else None
             failures = 0
         except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
@@ -409,6 +421,14 @@ def main():
             print("Evaluation completion unconfirmed; platform lease will handle recovery", file=sys.stderr, flush=True)
         if args.once:
             break
+
+
+def main():
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+    from evaluation_worker_lock import acquire_worker_lock
+    with acquire_worker_lock():
+        run_worker()
 
 
 if __name__ == "__main__":

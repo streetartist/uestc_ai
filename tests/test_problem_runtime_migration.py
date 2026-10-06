@@ -12,6 +12,21 @@ from platform_api.models import Competition, Track, Problem, ProblemRuntime
 
 
 class ProblemRuntimeMigrationTest(unittest.TestCase):
+    def test_incompatible_precreated_table_is_rejected_without_losing_rows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = create_app({"TESTING": True, "AUTO_CREATE_SCHEMA": False, "SEED_DATABASE": False,
+                "SQLALCHEMY_DATABASE_URI": "sqlite:///" + (Path(directory) / "incompatible.sqlite").as_posix(), "UPLOAD_FOLDER": directory})
+            with app.app_context():
+                try:
+                    upgrade(revision="b3f6a2d91804")
+                    db.session.execute(text('CREATE TABLE checkpoint_entries (id INTEGER PRIMARY KEY)'))
+                    db.session.execute(text('INSERT INTO checkpoint_entries (id) VALUES (7)'))
+                    db.session.commit(); db.session.remove()
+                    with self.assertRaises(SystemExit): upgrade()
+                    self.assertEqual(db.session.execute(text('SELECT id FROM checkpoint_entries')).scalar(), 7)
+                finally:
+                    db.session.remove(); db.engine.dispose()
+
     def test_dev_schema_creation_and_private_data_downgrade_protection(self):
         with tempfile.TemporaryDirectory() as directory:
             app = create_app({"TESTING": True, "AUTO_CREATE_SCHEMA": False, "SEED_DATABASE": False,

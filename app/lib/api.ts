@@ -120,7 +120,12 @@ export function formatApiError(error: unknown): string {
       "submission version is not formally submitted": "CSV 中包含尚未正式提交的作品版本。",
       "submission version belongs to a different problem": "CSV 中包含其他赛题的作品版本。",
       "score batch must contain one problem": "一个成绩批次只能包含同一道赛题。",
-      "evaluation test limit reached": "本队在这道题的指标测试次数已用尽。可继续保存草稿，请联系组织方调整次数后再正式提交。",
+      "evaluation test limit reached": "本队在这道题的测试次数已用尽，仍可选择已完成的结果正式提交。",
+      "an evaluation trial is already active": "本队已有测试排队或运行中，请等待结束后再开始新的测试。",
+      "selected evaluation result is not available": "请先选择本队在本题已完成的测评结果。",
+      "select a completed evaluation trial": "请选择已完成并生成指标的自主测试记录。",
+      "submitted package differs from selected evaluation trial": "当前程序包与所选测试不一致，请使用该次测试的程序包，或重新测试。",
+      "evaluation rules have changed": "测评规则已调整，请按当前规则重新测试。",
       "max_team_runs must be between 1 and 1000": "每队最多测试次数须为 1—1000 的整数。",
     };
     return translations[error.message] ?? error.message;

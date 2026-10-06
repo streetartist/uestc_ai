@@ -41,6 +41,7 @@ function CompetitionEditor({ competition, reload, onDeleted }: {
   const [teamMin, setTeamMin] = useState(competition.config.team_size?.min ?? 1);
   const [teamMax, setTeamMax] = useState(competition.config.team_size?.max ?? 4);
   const [submissionLimit, setSubmissionLimit] = useState(competition.config.submission_limit ?? 10);
+  const [checkpoints, setCheckpoints] = useState(competition.config.checkpoints ?? []);
   const [error, setError] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -69,6 +70,7 @@ function CompetitionEditor({ competition, reload, onDeleted }: {
             overview_md: overview,
             team_size: { min: teamMin, max: teamMax },
             submission_limit: submissionLimit,
+            checkpoints,
           },
         }),
       });
@@ -126,6 +128,7 @@ function CompetitionEditor({ competition, reload, onDeleted }: {
         <label className="form-field"><span>提交次数</span><input type="number" min="1" value={submissionLimit} onChange={(event) => setSubmissionLimit(Number(event.target.value))} /></label>
       </div>
       <FieldError>{error}</FieldError>
+      {checkpoints.length > 0 && <section><h3>Checkpoint 进度记录</h3><p>仅用于交流反馈，不扣自测次数。留空日期显示“待公布”。</p><div className="form-grid">{checkpoints.map((point, index) => <label className="form-field" key={point.id}><span>{point.label} · 截止时间</span><input type="datetime-local" value={localDate(point.due_at)} onChange={(event) => setCheckpoints(checkpoints.map((item, i) => i === index ? { ...item, due_at: isoDate(event.target.value) } : item))} /></label>)}</div><Link href="/manage/checkpoints" className="text-button">查看队伍进度与填写反馈 <ArrowRight size={15} /></Link></section>}
     </form>
     <ConfirmDialog open={deleteOpen} title={`删除赛事“${competition.name}”？`} description="没有参赛记录时，赛事及其赛道和赛题会一并删除。已有队伍、报名或成绩的赛事只能归档。" busy={deleting} error={deleteError} onCancel={() => { setDeleteOpen(false); setDeleteError(""); }} onConfirm={() => void remove()} />
   </>;

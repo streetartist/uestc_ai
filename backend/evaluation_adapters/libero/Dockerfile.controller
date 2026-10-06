@@ -1,0 +1,10 @@
+FROM python:3.11-slim-bookworm
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources && apt-get -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 install -y --no-install-recommends libosmesa6 libgl1 libglib2.0-0 gcc libc6-dev linux-libc-dev git && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir robosuite==1.4.0 mujoco==2.3.7 numpy==1.26.4 Pillow==11.3.0 bddl==1.0.1 future==1.0.0 matplotlib==3.8.4 cloudpickle==3.1.1 gym==0.25.2 easydict==1.13 pyyaml==6.0.2 opencv-python-headless==4.10.0.84 termcolor==2.4.0
+ARG LIBERO_REV=8f1084e3132a39270c3a13ebe37270a43ece2a01
+RUN git init /opt/LIBERO && cd /opt/LIBERO && git remote add origin https://github.com/Lifelong-Robot-Learning/LIBERO.git && git fetch --depth=1 origin ${LIBERO_REV} && git checkout --detach FETCH_HEAD && rm -rf .git && pip install --no-deps -e .
+RUN mkdir -p /opt/libero-config && python -c "import yaml; from pathlib import Path; root='/opt/LIBERO/libero/libero'; Path('/opt/libero-config/config.yaml').write_text(yaml.safe_dump(dict(benchmark_root=root,bddl_files=root+'/bddl_files',init_states=root+'/init_files',assets=root+'/assets',datasets='/opt/LIBERO/datasets')))" && mkdir -p /opt/LIBERO/datasets
+COPY backend/evaluation_adapters /runner/evaluation_adapters
+ENV PYTHONPATH=/runner PYTHONDONTWRITEBYTECODE=1 MUJOCO_GL=osmesa PYOPENGL_PLATFORM=osmesa NUMBA_CACHE_DIR=/tmp/numba HOME=/tmp LIBERO_CONFIG_PATH=/opt/libero-config OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+CMD ["python", "-m", "evaluation_adapters.libero_runner"]

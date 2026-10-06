@@ -148,7 +148,7 @@ function ProblemEditor({ problem, initialTrack, competition, tracks, isNew, onCr
         statement_md: statement,
         submission_schema: submissionSchema,
         judging_schema: { rubric: parseRubric(rubric) },
-        scoring_config: { external_weight_percent: parsedExternalWeight },
+        scoring_config: { ...problem?.scoring_config, external_weight_percent: parsedExternalWeight },
         ...(isNew ? { evaluation_config: evaluationConfig } : {}),
       };
       if (isNew) {

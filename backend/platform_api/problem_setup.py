@@ -31,32 +31,53 @@ def validate_runtime(value, evaluation):
     if value is None:
         return None
     if not evaluation:
-        raise ValueError("请先选择评测器，再设置 Docker 环境。")
-    if not isinstance(value, dict) or set(value) - {"image", "agent_image", "scenarios"}:
-        raise ValueError("Docker 环境只接受镜像、智能体镜像和测试场景。")
+        raise ValueError("请先选择评测器，再设置运行环境。")
+    if not isinstance(value, dict) or set(value) - {"image", "agent_image", "scenarios", "execution"}:
+        raise ValueError("测评环境只接受运行方式、镜像、智能体镜像和测试场景。")
     value = deepcopy(value)
+    native = value.get("execution") == "autodl-native"
+    if "execution" in value and (not isinstance(value["execution"], str) or value["execution"] not in {"docker", "autodl-native"}):
+        raise ValueError("未知测评运行方式。")
+    if native and (evaluation["adapter"] != "classification-v1" or not evaluation["resources"]["gpu"]
+                   or evaluation["api"]["enabled"]):
+        raise ValueError("AutoDL 原生测评仅用于无需模型 API 的 GPU 分类推理。")
     for name in ("image", "agent_image"):
         image = value.get(name, "")
+        if native and name == "image":
+            if not isinstance(image, str) or not re.fullmatch(r"image-[A-Za-z0-9_-]{1,150}", image):
+                raise ValueError("AutoDL 原生环境需要已保存的私有镜像编号 image-…。")
+            continue
         if not isinstance(image, str) or (name == "image" or image) and not re.fullmatch(r"(?:[^\s]{1,250}@)?sha256:[a-f0-9]{64}", image):
             raise ValueError("Docker 镜像须填写固定 sha256 摘要，不能使用 latest 等可变标签。")
     scenes = value.get("scenarios", [])
     if not isinstance(scenes, list) or len(json.dumps(scenes, allow_nan=False).encode()) > 1024 * 1024:
         raise ValueError("私有测试场景须为 JSON 列表，且不超过 1 MB。")
-    if evaluation["adapter"] == "minecraft-agent-v1" and evaluation["task"] == "open-world":
+    if native:
+        if value.get("agent_image"):
+            raise ValueError("AutoDL 原生分类环境不接受智能体镜像。")
+        from evaluation_adapters.classification_runner import validate_scenarios
+        validate_scenarios(scenes, evaluation["resources"]["episodes"])
+    elif evaluation["adapter"] == "minecraft-agent-v1" and evaluation["task"] == "open-world":
         if not value.get("agent_image"):
             raise ValueError("MC 开放世界需要独立的智能体镜像。")
         from evaluation_adapters.minecraft_runner import validate_scenarios
         validate_scenarios(scenes, evaluation["resources"]["episodes"])
-    elif evaluation["adapter"] == "robot-arm-agent-v1":
+    elif evaluation["adapter"] in {"robot-arm-agent-v1", "libero-agent-v1"}:
         if not value.get("agent_image"):
             raise ValueError("机械臂需要独立的智能体镜像。")
-        from evaluation_adapters.robot_arm_runner import validate_scenarios
+        if evaluation["adapter"] == "libero-agent-v1":
+            from evaluation_adapters.libero_runner import validate_scenarios
+        else:
+            from evaluation_adapters.robot_arm_runner import validate_scenarios
         validate_scenarios(scenes, evaluation["resources"]["episodes"])
     elif value.get("agent_image"):
         raise ValueError("独立智能体镜像只用于 MC 或机械臂评测器。")
     elif scenes and len(scenes) != evaluation["resources"]["episodes"]:
         raise ValueError("私有场景数量必须与每次测试的场景数量一致。")
-    return {"image": value["image"], "agent_image": value.get("agent_image", ""), "scenarios": scenes}
+    result = {"image": value["image"], "agent_image": value.get("agent_image", ""), "scenarios": scenes}
+    if "execution" in value:
+        result["execution"] = value["execution"]
+    return result
 
 
 def normalize_setup(data, existing_evaluation=None):
@@ -84,7 +105,7 @@ def runtime_images_allowed(runtime, evaluation):
     # Organizers can reuse an admin-approved image pair, including new private cases.
     for saved in ProblemRuntime.query.all():
         if saved.problem.evaluation_config.get("adapter") == evaluation.get("adapter") and all(
-            saved.config.get(key, "") == runtime.get(key, "") for key in ("image", "agent_image")
+            saved.config.get(key, "") == runtime.get(key, "") for key in ("image", "agent_image", "execution")
         ):
             return
     raise GatewayError("请先由管理员登记可信镜像，再选择复用环境。", 403)
@@ -98,6 +119,8 @@ def save_setup(problem, data):
     db.session.refresh(problem)
     data = normalize_setup(data, problem.evaluation_config)
     evaluation = data.get("evaluation_config", problem.evaluation_config)
+    from .performance_scoring import validate_problem_scoring
+    validate_problem_scoring(problem.scoring_config or {}, evaluation, problem.judging_schema or {})
     previous = db.session.get(ProblemRuntime, problem.id, populate_existing=True)
     runtime = data.get("runtime", previous.config if previous else None)
     if runtime:
@@ -134,6 +157,7 @@ def setup_data(problem):
 
 
 def readiness(problem):
+    from .judge import configured_pool, available
     data = setup_data(problem)
     evaluation, runtime, ai, compute = (data[key] for key in ("evaluation_config", "runtime", "ai", "compute"))
     checks = []
@@ -142,14 +166,29 @@ def readiness(problem):
     if evaluation:
         adapter = next((item for item in catalog() if item["id"] == evaluation["adapter"]), None)
         add("adapter", "评测器接入", "ready" if adapter and adapter["available"] else "blocked", "已启用评测器" if adapter and adapter["available"] else "管理员需要启用此评测器并配置测评端认证。")
-        add("runtime", "Docker 环境", "ready" if runtime else "warning", "固定镜像与私有场景已保存" if runtime else "尚未设置题目环境，将使用运行端原有配置。")
+        add("runtime", "测评环境", "ready" if runtime else "warning", "固定镜像与私有场景已保存" if runtime else "尚未设置题目环境，将使用运行端原有配置。")
         workers = EvaluationWorkerState.query.filter(EvaluationWorkerState.seen_at > utcnow() - timedelta(seconds=75)).all()
+        from evaluation_resources import memory_fits
         compatible = any(evaluation["adapter"] in w.capabilities["adapters"]
+            and memory_fits(w.capabilities, evaluation)
             and (not runtime or w.capabilities.get("managed_runtime"))
+            and (not runtime or runtime.get("execution", "docker") in w.capabilities.get("execution_backends", ["docker"]))
+            and (not runtime or "runtime_images" not in w.capabilities or runtime["image"] in w.capabilities["runtime_images"])
+            and (not runtime or runtime.get("execution") != "autodl-native" or all(
+                w.capabilities.get("dataset_manifests", {}).get(scene["dataset"]) == scene["manifest_sha256"]
+                for scene in runtime["scenarios"]))
             and (runtime or evaluation["adapter"] in w.capabilities.get("legacy_adapters", w.capabilities["adapters"]))
             and (not evaluation["resources"]["gpu"] or w.capabilities["gpu"])
             and (not evaluation["api"]["enabled"] or w.capabilities.get("api_proxy", True)) for w in workers)
-        add("worker", "测评端在线", "ready" if compatible else "blocked", "已发现可处理本题的在线测评端" if compatible else "没有匹配的在线测评端，请启动 Docker 测评服务。")
+        pool = configured_pool(problem)
+        automatic = available(pool, runtime)
+        if pool and runtime and runtime.get("execution") == "autodl-native":
+            from .judge import worker_ready
+            compatible = pool.state == "ready" and worker_ready(pool)
+        add("worker", "测评端与自动调度", "ready" if compatible or automatic else "blocked",
+            "已发现可处理本题的在线测评端" if compatible else
+            f"专用 GPU 测评机自动唤醒已配置；无任务 {pool.idle_seconds} 秒后自动关机。" if automatic else
+            pool.error if pool and pool.error else "没有匹配的在线测评端或可用自动调度，请检查服务与数据。")
         add("limits", "测试限制", "ready", f"每次 {evaluation['resources']['time_seconds']} 秒；每队 {evaluation.get('max_team_runs', '不限')} 次")
     else:
         add("evaluation", "指标测试", "unused", "本题只收作品材料，不自动运行程序。")
@@ -164,7 +203,7 @@ def readiness(problem):
                   for model in channel.models if model not in channel.disabled_models and has_keys(channel)}
         missing = sorted(set(ai["allowed_models"]) - models)
         required = bool(evaluation and evaluation["api"]["enabled"])
-        empty = ai["max_tokens"] == 0 or ai["max_calls"] == 0 or ai.get("max_cost_micros") == 0 or required and evaluation["api"]["max_calls"] == 0
+        empty = not ai["allowed_models"] or ai["max_tokens"] == 0 or ai["max_calls"] == 0 or ai.get("max_cost_micros") == 0 or required and evaluation["api"]["max_calls"] == 0
         add("api", "模型 API", "blocked" if required and (not ai["enabled"] or empty) else "unused" if not ai["enabled"] else "blocked" if missing else "warning" if empty else "ready",
             "指标测试需要 API，但本题 API 已暂停。" if required and not ai["enabled"] else "本题 API 已暂停" if not ai["enabled"] else "可调用额度为零，请调整额度。" if empty else "缺少可用模型：" + "、".join(missing) if missing else "模型渠道与每队额度已配置")
     elif evaluation and evaluation["api"]["enabled"]:
@@ -179,6 +218,31 @@ def readiness(problem):
             "队伍自用算力已暂停" if not compute["enabled"] else "渠道已配置，开机后本队可获取 SSH 和实例工具。" if ok else "请检查算力渠道启用、Token 与算力服务在线状态。")
     else:
         add("compute", "AutoDL 与 SSH", "unused", "未分配队伍自用算力。")
+    if (problem.track.competition.config or {}).get("launch", {}).get("require_ready"):
+        from datetime import timezone
+        from .performance_scoring import validate_problem_scoring
+        competition = problem.track.competition
+        start, end = competition.starts_at, competition.ends_at
+        if start and start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        if end and end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        now = utcnow()
+        scheduled = bool(start and end and start < end)
+        add("schedule", "比赛起止时间", "ready" if scheduled and start <= now < end else "blocked",
+            "比赛进行中，截止后停止自测与提交。" if scheduled and start <= now < end else
+            "尚未到开赛时间。" if scheduled and now < start else "比赛已截止。" if scheduled else "请在赛事设置填写开赛与截止时间。")
+        if evaluation and not runtime:
+            add("formal_runtime", "正式场景与数据", "blocked", "正式测评必须绑定固定镜像和私有测试场景。")
+        try:
+            validate_problem_scoring(problem.scoring_config or {}, evaluation or {}, problem.judging_schema or {})
+            score_ready = bool((problem.scoring_config or {}).get("performance_scoring"))
+        except ValueError:
+            score_ready = False
+        add("scoring", "正式计分规则", "ready" if score_ready else "blocked",
+            "表现分由可信指标自动换算；报告和答辩独立评分。" if score_ready else "请配置与测评指标匹配的表现分公式和评分项。")
+        if evaluation and evaluation["api"]["enabled"] and not (ai and ai["enabled"]):
+            add("formal_api", "统一模型额度", "blocked", "正式赛题须提供本题统一模型和每队额度，不能仅使用运行端默认接口。")
     return {"checks": checks, "ready": not any(c["state"] == "blocked" for c in checks)}
 
 
@@ -249,6 +313,8 @@ def read_package(raw):
             setup["runtime"]["scenarios"] = json.loads(files["scenarios.json"])
         setup["evaluation_config"] = setup.get("evaluation_config", problem.get("evaluation_config", {}))
         problem["evaluation_config"] = validate_evaluation_config(setup["evaluation_config"])
+        from .performance_scoring import validate_problem_scoring
+        validate_problem_scoring(problem["scoring_config"], problem["evaluation_config"], problem.get("judging_schema", {}))
         connections = json.loads(files.get("connections.json", "{}"))
         if not isinstance(connections, dict) or set(connections) - {"channels", "provider"}:
             raise ValueError("渠道绑定格式不正确。")

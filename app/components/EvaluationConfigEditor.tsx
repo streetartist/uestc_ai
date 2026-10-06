@@ -5,9 +5,10 @@ import { useApiResource } from "@/app/lib/useApiResource";
 
 function initialConfig(adapter: EvaluationAdapter): EvaluationConfig {
   const minecraft = adapter.id === "minecraft-agent-v1";
+  const isolatedAgent = minecraft || ["libero-agent-v1", "robot-arm-agent-v1"].includes(adapter.id);
   return {
     adapter: adapter.id, task: minecraft ? "open-world" : adapter.tasks[0],
-    resources: { cpus: minecraft ? 4 : 2, memory_mb: minecraft ? 6144 : 4096, gpu: false, time_seconds: 900, episodes: 1 },
+    resources: { cpus: minecraft ? 4 : 2, memory_mb: isolatedAgent ? 2048 : 4096, gpu: false, time_seconds: 900, episodes: 1 },
     api: { enabled: false, max_calls: 0 }, metrics: adapter.metrics.filter(metric => !minecraft || !["api_calls", "api_cost", "survival_seconds"].includes(metric.key)).map((metric) => metric.key), max_team_runs: 3,
   };
 }
@@ -36,10 +37,11 @@ export function EvaluationConfigEditor({ value, onChange }: { value: EvaluationC
           else next.max_team_runs = Number(event.target.value);
           onChange(next);
         }} /><small>1—1000 次；留空不限制，新配置默认 3 次。</small></label>
-        {([ ["cpus", "CPU 核数", 1, 16], ["memory_mb", "内存 MB", 512, 65536], ["episodes", "每次测试的场景数量", 1, 30] ] as const).map(([key, label, min, max]) => <label className="form-field" key={key}><span>{label}</span><input type="number" min={min} max={max} required value={active.resources[key]} onChange={(event) => onChange({ ...active, resources: { ...active.resources, [key]: Number(event.target.value) } })} /></label>)}
+        {([ ["cpus", "CPU 核数", 1, 16], ["memory_mb", "程序内存（MiB）", 512, 65536], ["episodes", "每次测试的场景数量", 1, 30] ] as const).map(([key, label, min, max]) => <label className="form-field" key={key}><span>{label}</span><input type="number" min={min} max={max} required value={active.resources[key]} onChange={(event) => onChange({ ...active, resources: { ...active.resources, [key]: Number(event.target.value) } })} /></label>)}
       </div>
-      <p className="evaluation-note">每次正式提交触发一次测试并扣一次额度，草稿不扣次数。失败、超时和替换提交仍计入，运行端故障重试不重复扣除。调整时长或次数只影响后续测试，已用次数保留。</p>
-      <label className="evaluation-toggle"><input type="checkbox" disabled={active.adapter === "robot-arm-agent-v1"} checked={active.resources.gpu} onChange={(event) => onChange({ ...active, resources: { ...active.resources, gpu: event.target.checked } })} />{active.adapter === "robot-arm-agent-v1" ? "机械臂首版使用 CPU 仿真与渲染" : "分配 GPU"}</label>
+      {(active.adapter === "minecraft-agent-v1" && active.task === "open-world" || ["libero-agent-v1", "robot-arm-agent-v1"].includes(active.adapter)) && <p className="evaluation-note">程序内存为选手代码的硬上限，超限结束本次测试并计次。独立仿真环境另计{active.adapter === "minecraft-agent-v1" ? "4" : "3"} GiB；节点按程序与环境的合计内存匹配任务。</p>}
+      <p className="evaluation-note">队伍主动发起自测时扣一次机会；草稿和 checkpoint 不扣，选择完成结果正式提交不重复计次。代码失败和超时计次，工作端恢复领取不多扣。调整时长或次数只影响后续测试，已用次数保留。</p>
+      <label className="evaluation-toggle"><input type="checkbox" disabled={["robot-arm-agent-v1", "libero-agent-v1"].includes(active.adapter)} checked={active.resources.gpu} onChange={(event) => onChange({ ...active, resources: { ...active.resources, gpu: event.target.checked } })} />{["robot-arm-agent-v1", "libero-agent-v1"].includes(active.adapter) ? "当前机械臂适配器使用 CPU 仿真与渲染" : "分配 GPU"}</label>
       <label className="evaluation-toggle"><input type="checkbox" checked={active.api.enabled} onChange={(event) => onChange({ ...active, api: { enabled: event.target.checked, max_calls: event.target.checked ? 100 : 0 } })} />允许受控 API 调用</label>
       {active.api.enabled && <label className="form-field"><span>API 调用上限</span><input type="number" min="0" max="100000" value={active.api.max_calls} onChange={(event) => onChange({ ...active, api: { ...active.api, max_calls: Number(event.target.value) } })} /></label>}
       <div className="evaluation-metric-picker"><strong>展示指标</strong><div>{chosen.metrics.filter((metric) => !(active.adapter === "minecraft-agent-v1" && active.task === "open-world" && ["api_calls", "api_cost", "survival_seconds"].includes(metric.key))).map((metric) => <label key={metric.key}><input type="checkbox" checked={active.metrics.includes(metric.key)} onChange={(event) => onChange({ ...active, metrics: event.target.checked ? [...active.metrics, metric.key] : active.metrics.filter((key) => key !== metric.key) })} /><span>{metric.label} <small>{metric.unit}</small></span></label>)}</div></div>

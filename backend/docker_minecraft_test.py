@@ -90,7 +90,7 @@ def main():
             archive.writestr("agent.py", source)
             archive.writestr("config.json", "{}")
     config = {"adapter": "minecraft-agent-v1", "task": "open-world",
-              "resources": {"cpus": 4, "memory_mb": 6144, "gpu": False, "time_seconds": args.time_limit, "episodes": 3},
+              "resources": {"cpus": 4, "memory_mb": 2048, "gpu": False, "time_seconds": args.time_limit, "episodes": 3},
               "api": {"enabled": False, "max_calls": 0}, "metrics": METRICS, "max_team_runs": 1}
     app = create_app({"TESTING": True, "SQLALCHEMY_DATABASE_URI": "sqlite:///" + (output / "test.sqlite3").as_posix(),
                       "UPLOAD_FOLDER": str(output / "uploads"), "AUTO_CREATE_SCHEMA": True, "SEED_DATABASE": True,
@@ -131,14 +131,16 @@ def main():
         assets = []
         for filename, contents in [("agent.zip", package.read_bytes()), ("report.pdf", b"%PDF-1.4\n% acceptance placeholder, not a research report\n%%EOF")]:
             assets.append(checked(member.post("/api/submission-assets/stage", data={"file": (io.BytesIO(contents), filename)}, content_type="multipart/form-data"), 201)["id"])
-        submission = checked(member.post("/api/submissions", json={"problem_id": problem["id"], "team_id": team["id"], "title": "真实 Minecraft 验收",
+        formal_fields = {"problem_id": problem["id"], "team_id": team["id"], "title": "真实 Minecraft 验收",
                              "readme_md": "# Docker 验收\n公开短场景，仅验证评测链路。", "fields": {"runtime_notes": "Acceptance agent"},
-                             "status": "submitted", "staged_asset_ids": assets}), 201)
+                             "status": "submitted", "staged_asset_ids": assets}
+        trial = checked(member.post(f"/api/problems/{problem['id']}/evaluation-runs", json={"team_id": team["id"], "staged_asset_ids": assets}), 201)
         job = checked(worker.post("/api/evaluation-worker/claim", headers={"Authorization": "Bearer " + app.config["EVALUATION_WORKER_TOKEN"]}, json={"adapters": ["minecraft-agent-v1"], "gpu": False, "managed_runtime": not args.legacy_runtime}))
         if not args.legacy_runtime:
             assert job["runtime"]["scenarios"] == scenes
             assert "world_seed" not in json.dumps(checked(member.get(f"/api/evaluation-runs/{job['id']}")))
-        print("Submitted and claimed; running real MineDojo controller + isolated ZIP agent", flush=True)
+        assert job["id"] == trial["id"]
+        print("Team trial started and claimed; running real MineDojo controller + isolated ZIP agent", flush=True)
         started = time.monotonic()
         try:
             result = execute(f"http://127.0.0.1:{server.server_port}/api", job,
@@ -150,7 +152,7 @@ def main():
                 raise
             budget = checked(member.get(f"/api/problems/{problem['id']}/evaluation-budget?team_id={team['id']}"))
             assert budget["used_runs"] == 1 and budget["remaining_runs"] == 0
-            checked(member.post("/api/submissions", json={"problem_id": problem["id"], "team_id": team["id"], "title": "Blocked retest", "status": "submitted"}), 429)
+            checked(member.post(f"/api/problems/{problem['id']}/evaluation-runs", json={"team_id": team["id"], "staged_asset_ids": assets}), 429)
             remaining = subprocess.check_output(["docker", "ps", "-aq", "--filter", "label=uestc.evaluation_run=" + job["id"]], text=True).strip()
             assert not remaining, "Timed-out Minecraft containers were not removed"
             report = {"status": "passed", "environment": "real MineDojo / Minecraft", "time_limit_seconds": args.time_limit,
@@ -167,6 +169,9 @@ def main():
             raise AssertionError("The deliberately slow agent was not stopped by its time limit")
         (output / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
         completed = checked(worker.post(f"/api/evaluation-worker/runs/{job['id']}/complete", headers={"X-Evaluation-Lease": job["lease_token"]}, json=result))
+        submission = checked(member.post("/api/submissions", json={**formal_fields, "evaluation_run_id": trial["id"]}), 201)
+        budget = checked(member.get(f"/api/problems/{problem['id']}/evaluation-budget?team_id={team['id']}"))
+        assert budget["used_runs"] == 1, "Formal submission consumed another testing opportunity"
         checked(reviewer.post("/api/auth/login", json={"email": "reviewer@uestc.ai", "password": "Acceptance123!"}))
         queue = checked(reviewer.get("/api/review-queue"))
         visible = next(item["evaluation"] for item in queue if item["id"] == submission["version"]["id"])

@@ -1,0 +1,22 @@
+[Unit]
+Description=UESTC AI AutoDL quota and shutdown monitor
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
+
+[Service]
+User=uestc-ai
+Group=uestc-ai
+WorkingDirectory=/opt/uestc-ai/current/backend
+EnvironmentFile=/etc/uestc-ai/backend.env
+ExecStart=/opt/uestc-ai/shared/venv/bin/python compute_worker.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/uestc-ai/shared
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target

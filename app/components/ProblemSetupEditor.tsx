@@ -11,16 +11,18 @@ import { EvaluationConfigEditor } from "./EvaluationConfigEditor";
 import { FieldError, PageError, PageLoading } from "./ui";
 import { useToast } from "./ToastProvider";
 import "./problem-setup.css";
+import { JudgePoolEditor, type JudgePoolStatus } from "./JudgePoolEditor";
 
 type Scene = { id: string; label: string; difficulty: string; task_id: string; world_seed: number | string; max_steps: number; goals: string[] };
 type RobotScene = { id: string; label: string; difficulty: string; task: "lift" | "place" | "stack"; seed: number; max_steps: number; hold_steps: number; target?: number[] };
-type Runtime = { image: string; agent_image: string; scenarios: unknown[] };
+type LiberoScene = { id: string; label: string; difficulty: string; suite: string; task_id: number; task_name: string; init_state_id: number; seed: number; max_steps: number };
+type Runtime = { image: string; agent_image: string; scenarios: unknown[]; execution?: "docker" | "autodl-native" };
 type Compute = { provider_id: string; enabled: boolean; max_gpu_seconds: number; max_cost_millis: number | null };
 type Provider = { id: string; name: string; enabled: boolean; gpu_label: string; gpu_count: number; hourly_price_millis: number };
-type RuntimeOption = { problem_id: string; name: string; adapter: string; image: string; agent_image: string };
+type RuntimeOption = { problem_id: string; name: string; adapter: string; image: string; agent_image: string; execution?: "docker" | "autodl-native" };
 type Config = { evaluation_config: EvaluationConfig; runtime: Runtime | null; ai: AIQuotaConfig | null; compute: Compute | null };
 type Check = { key: string; label: string; state: "ready" | "blocked" | "warning" | "unused"; detail: string };
-type Setup = { config: Config; checks: Check[]; ready: boolean };
+type Setup = { config: Config; checks: Check[]; ready: boolean; judge?: JudgePoolStatus | null };
 const defaultAI: AIQuotaConfig = { enabled: true, allowed_models: [], allowed_channels: [], max_calls: 1000, max_tokens: 1000000, max_cost_micros: null, max_output_tokens: 4096, requests_per_minute: 60, max_concurrent: 2 };
 
 export function ProblemSetupEditor({ problemId, saved }: { problemId: string; saved: () => Promise<void> }) {
@@ -44,6 +46,7 @@ function SetupForm({ problemId, initial, refresh, saved }: { problemId: string; 
   const active = config.evaluation_config.adapter ? config.evaluation_config as Extract<EvaluationConfig, { adapter: string }> : null;
   const minecraft = active?.adapter === "minecraft-agent-v1" && active.task === "open-world";
   const robot = active?.adapter === "robot-arm-agent-v1";
+  const libero = active?.adapter === "libero-agent-v1";
   const allowedChannels = channels.data?.filter(c => c.enabled && (!config.ai?.allowed_channels.length || config.ai.allowed_channels.includes(c.id))) ?? [];
   const models = [...new Set([...allowedChannels.flatMap(c => Object.keys(c.models).filter(m => !c.disabled_models.includes(m))), ...(config.ai?.allowed_models ?? [])])].sort();
   function setRuntime(change: Partial<Runtime>) { setConfig(c => ({ ...c, runtime: { image: "", agent_image: "", scenarios: [], ...c.runtime, ...change } })); }
@@ -54,6 +57,9 @@ function SetupForm({ problemId, initial, refresh, saved }: { problemId: string; 
   }
   function setRobotScene(index: number, change: Partial<RobotScene>) {
     setRuntime({ scenarios: config.runtime!.scenarios.map((s, i) => i === index ? { ...s as RobotScene, ...change } : s) });
+  }
+  function setLiberoScene(index: number, change: Partial<LiberoScene>) {
+    setRuntime({ scenarios: config.runtime!.scenarios.map((s, i) => i === index ? { ...s as LiberoScene, ...change } : s) });
   }
   function replaceRobotScenes(scenarios: RobotScene[]) {
     setConfig(c => ({ ...c, runtime: { image: "", agent_image: "", ...c.runtime, scenarios }, evaluation_config: active ? { ...active, resources: { ...active.resources, episodes: scenarios.length || 1 } } : c.evaluation_config }));
@@ -78,17 +84,20 @@ function SetupForm({ problemId, initial, refresh, saved }: { problemId: string; 
   return <div className="problem-setup">
     <section className="setup-check-panel"><div className="ai-section-title"><div><h2>环境与资源</h2><p>为本题统一设置运行环境和每队额度，已有用量保留，新队伍自动适用。</p></div><button type="button" className="outline-button" onClick={() => void refresh()} disabled={busy}><RefreshCw size={14} />检查状态</button></div>
       <div className="setup-checks">{initial.checks.map(check => <div key={check.key} className={`setup-check ${check.state}`}><span>{check.state === "ready" ? <CheckCircle2 size={16} /> : <CircleAlert size={16} />}{check.label}<small>{({ ready: "已就绪", blocked: "待配置", warning: "需确认", unused: "未启用" })[check.state]}</small></span><p>{check.detail}</p></div>)}</div>
-      <p className="evaluation-note">状态反映已保存配置。队伍自用 AutoDL 与平台指标测试分别计量；SSH 和实例工具会在队伍开机后显示。</p>
+      <p className="evaluation-note"><strong>{initial.ready ? "当前配置检查通过。" : "尚有未完成项，请补齐后开放正式测试。"}</strong> 状态反映已保存配置；接口连通与真实数据基线仍需实际验收。队伍自用 AutoDL 与平台指标测试分别计量。</p>
     </section>
+    {initial.config.runtime?.execution === "autodl-native" && <JudgePoolEditor key={JSON.stringify(initial.judge)} problemId={problemId} initial={initial.judge ?? null} refresh={refresh} />}
     <form className="manage-form setup-form" onSubmit={submit}>
       <EvaluationConfigEditor value={config.evaluation_config} onChange={evaluation_config => setConfig(c => ({ ...c, evaluation_config, runtime: evaluation_config.adapter === c.evaluation_config.adapter ? c.runtime : null }))} />
-      {active && <fieldset className="evaluation-editor"><legend>Docker 测试环境</legend><p className="evaluation-note">依赖与评测程序放在固定镜像中，私有场景只发给平台测评端。保存后自动用于本题的后续测试。</p>
+      {active && <fieldset className="evaluation-editor"><legend>指标测试环境</legend><p className="evaluation-note">依赖与评测程序放在固定镜像中，私有场景只发给平台测评端。保存后自动用于本题的后续测试。</p>
+        {active.adapter === "classification-v1" && <label className="form-field"><span>运行方式</span><select value={config.runtime?.execution ?? "docker"} onChange={e => setRuntime({ execution: e.target.value as Runtime["execution"], image: "", agent_image: "", scenarios: [] })}><option value="docker">独立 Docker 测评节点</option><option value="autodl-native">组织方 AutoDL 专用测评实例</option></select><small>AutoDL 测评实例由组织方管理，选手的训练实例单独配置。</small></label>}
         <label className="form-field"><span>复用已配置环境</span><select value="" onChange={e => {
           const item = runtimes.data?.find(r => r.problem_id === e.target.value);
-          if (item) setRuntime({ image: item.image, agent_image: item.agent_image });
+          if (item) setRuntime({ image: item.image, agent_image: item.agent_image, execution: item.execution ?? "docker" });
         }}><option value="">选择已有题目的可信镜像…</option>{runtimes.data?.filter(r => r.adapter === active.adapter).map(r => <option key={r.problem_id} value={r.problem_id}>{r.name}</option>)}</select><small>仅复用镜像，本题测试场景独立设置。</small></label>
         <button type="button" className="text-button" onClick={() => setAdvanced(!advanced)}>{advanced ? "收起镜像设置" : "设置镜像 / 查看当前镜像"}</button>
-        {advanced && <div className="form-grid"><label className="form-field"><span>{minecraft ? "可信 MC 控制器镜像" : robot ? "可信机械臂仿真镜像" : "可信评测器镜像"}</span><input value={config.runtime?.image ?? ""} onChange={e => setRuntime({ image: e.target.value.trim() })} placeholder="镜像名@sha256:… 或 sha256:…" /><small>管理员可登记新镜像，组织者可复用已登记镜像。</small></label>{(minecraft || robot) && <label className="form-field"><span>独立智能体镜像</span><input value={config.runtime?.agent_image ?? ""} onChange={e => setRuntime({ agent_image: e.target.value.trim() })} placeholder="镜像名@sha256:…" /></label>}</div>}
+        {advanced && <div className="form-grid"><label className="form-field"><span>{config.runtime?.execution === "autodl-native" ? "AutoDL 私有测评镜像编号" : minecraft ? "可信 MC 控制器镜像" : robot || libero ? "可信机械臂仿真镜像" : "可信评测器镜像"}</span><input value={config.runtime?.image ?? ""} onChange={e => setRuntime({ image: e.target.value.trim() })} placeholder={config.runtime?.execution === "autodl-native" ? "image-…" : "镜像名@sha256:… 或 sha256:…"} /><small>管理员可登记新镜像，组织者可复用已登记镜像。</small></label>{(minecraft || robot || libero) && <label className="form-field"><span>独立智能体镜像</span><input value={config.runtime?.agent_image ?? ""} onChange={e => setRuntime({ agent_image: e.target.value.trim() })} placeholder="镜像名@sha256:…" /></label>}</div>}
+        {config.runtime?.execution === "autodl-native" && <p className="evaluation-note">导入数据集配置 JSON，每项填写 dataset 与 manifest_sha256。正式深度数据和隐藏标签存放在测评实例的私有目录，网页不保存标签。</p>}
         <div className="setup-scene-heading"><strong>私有测试场景 · {config.runtime?.scenarios.length ?? 0} 个</strong><label className="outline-button setup-file"><Upload size={14} />导入场景 JSON<input type="file" accept=".json,application/json" onChange={e => void loadScenes(e.target.files?.[0])} /></label></div>
         {minecraft && <div className="setup-scenes">{config.runtime?.scenarios.map((raw, i) => {
           const scene = raw as Partial<Scene>;
@@ -106,7 +115,12 @@ function SetupForm({ problemId, initial, refresh, saved }: { problemId: string; 
             setRuntime({ scenarios: config.runtime!.scenarios.map((s, n) => n === i ? next : s) });
           }}><option value="lift">抓取并抬升</option><option value="place">指定位置放置</option><option value="stack">红色积木堆叠到绿色积木</option></select></label><label className="form-field"><span>布局种子</span><input type="number" min={0} max={2147483647} value={scene.seed ?? 42} onChange={e => setRobotScene(i, { seed: Number(e.target.value) })} /></label><label className="form-field"><span>最大物理步数</span><input type="number" min={10} max={3000} value={scene.max_steps ?? 600} onChange={e => setRobotScene(i, { max_steps: Number(e.target.value) })} /></label><label className="form-field"><span>目标连续稳定步数</span><input type="number" min={5} max={100} value={scene.hold_steps ?? 10} onChange={e => setRobotScene(i, { hold_steps: Number(e.target.value) })} /></label><label className="form-field"><span>难度</span><select value={scene.difficulty ?? "beginner"} onChange={e => setRobotScene(i, { difficulty: e.target.value })}><option value="beginner">入门</option><option value="intermediate">进阶</option><option value="challenge">挑战</option></select></label>{scene.task === "place" && [0, 1].map(axis => <label className="form-field" key={axis}><span>放置目标 {axis ? "Y" : "X"} · 米</span><input type="number" min={-0.25} max={0.25} step="0.01" value={scene.target?.[axis] ?? 0.1} onChange={e => setRobotScene(i, { target: [0, 1].map(n => n === axis ? Number(e.target.value) : scene.target?.[n] ?? 0.1) })} /></label>)}</div><button type="button" className="text-button" onClick={() => replaceRobotScenes(config.runtime!.scenarios.filter((_, n) => n !== i) as RobotScene[])}>移除场景</button></div>;
         })}<button type="button" className="outline-button" disabled={(config.runtime?.scenarios.length ?? 0) >= 30} onClick={() => replaceRobotScenes([...(config.runtime?.scenarios ?? []) as RobotScene[], { id: `arm-${crypto.randomUUID().slice(0, 8)}`, label: `机械臂场景 ${(config.runtime?.scenarios.length ?? 0) + 1}`, difficulty: "beginner", task: "lift", seed: 42, max_steps: 600, hold_steps: 10 }])}>添加机械臂场景</button></div>}
-        {!minecraft && !robot && config.runtime?.scenarios.length ? <p className="evaluation-note">场景作为 /input/scenarios.json 交给可信评测器，评测器需自行隔离队伍程序。</p> : null}
+        {libero && <div className="setup-scenes">{config.runtime?.scenarios.map((raw, i) => {
+          const scene = raw as Partial<LiberoScene>;
+          if (!raw || typeof raw !== "object" || !scene.suite || !scene.task_name) return <p key={i}>场景 {i + 1} 格式不正确，请导入 LIBERO 场景配置。</p>;
+          return <div className="setup-scene" key={scene.id ?? i}><strong>{scene.label}</strong><p>{scene.suite} / {scene.task_id} · {scene.task_name.replaceAll("_", " ")}</p><div className="form-grid"><label className="form-field"><span>官方初始状态编号</span><input type="number" min={0} max={49} value={scene.init_state_id ?? 0} onChange={e => setLiberoScene(i, { init_state_id: Number(e.target.value) })} /></label><label className="form-field"><span>环境种子</span><input type="number" min={0} max={2147483647} value={scene.seed ?? 42} onChange={e => setLiberoScene(i, { seed: Number(e.target.value) })} /></label><label className="form-field"><span>最大控制步数</span><input type="number" min={1} max={2000} value={scene.max_steps ?? 600} onChange={e => setLiberoScene(i, { max_steps: Number(e.target.value) })} /></label></div></div>;
+        })}<p className="evaluation-note">任务必须来自已登记的 LIBERO 范围，成功由原生判定器判断；任务、初始状态和种子只发给可信控制器。首次测试后不可更改场景。</p></div>}
+        {!minecraft && !robot && !libero && config.runtime?.scenarios.length ? <p className="evaluation-note">场景作为 /input/scenarios.json 交给可信评测器，评测器需自行隔离队伍程序。</p> : null}
         {!config.runtime && <p className="evaluation-note">未指定题目环境，继续使用测评端原有镜像配置。</p>}
       </fieldset>}
       <fieldset className="evaluation-editor"><legend>模型 API · 每队统一额度</legend><label className="evaluation-toggle"><input type="checkbox" checked={config.ai?.enabled ?? false} onChange={e => e.target.checked || initial.config.ai ? setAI({ enabled: e.target.checked }) : setConfig(c => ({ ...c, ai: null }))} />提供模型 API</label>

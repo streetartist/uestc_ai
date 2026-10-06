@@ -66,7 +66,7 @@ def scenario_descriptor(scenario: dict, index: int) -> dict[str, str]:
     }
 
 
-def run_episode(channel: JsonChannel, env, scenario: dict, selected: list[str]) -> dict[str, float]:
+def run_episode(channel: JsonChannel, env, scenario: dict, selected: list[str], evidence: Path | None = None) -> dict[str, float]:
     import numpy as np
 
     goals = scenario["goals"]
@@ -81,6 +81,7 @@ def run_episode(channel: JsonChannel, env, scenario: dict, selected: list[str]) 
         "step_latencies_ms": [], "api_calls": 0,
     }
     seen: set[str] = set()
+    records, frames = [], []
     for _ in range(scenario["max_steps"]):
         sample = public_observation(observation, noop)
         telemetry["positions"].append(sample["position"])
@@ -90,12 +91,19 @@ def run_episode(channel: JsonChannel, env, scenario: dict, selected: list[str]) 
         telemetry["tech_milestones"] = sorted(seen & MILESTONES)
         if len(telemetry["completed_objectives"]) == len(goals):
             break
+        if evidence is not None and len(records) % 50 == 0:
+            from PIL import Image
+            frames.append(Image.open(io.BytesIO(base64.b64decode(sample["image_jpeg_base64"]))).copy())
         started = time.perf_counter()
         channel.send({"type": "step", "observation": sample})
         action, valid = checked_action(channel.receive(), env)
         telemetry["step_latencies_ms"].append((time.perf_counter() - started) * 1000)
         if not valid:
             telemetry["invalid_actions"] += 1
+        records.append({"step": len(records) + 1, "action": action, "valid": valid,
+                        "position": sample["position"], "inventory": sample["inventory"],
+                        "completed_objectives": list(telemetry["completed_objectives"]),
+                        "decision_ms": telemetry["step_latencies_ms"][-1]})
         observation, _, done, _ = env.step(np.asarray(action, dtype=np.int64))
         if done or float(observation["life_stats"]["life"]) <= 0:
             if float(observation["life_stats"]["life"]) <= 0:
@@ -116,6 +124,13 @@ def run_episode(channel: JsonChannel, env, scenario: dict, selected: list[str]) 
         telemetry["collected_items"] = sorted(seen)
         telemetry["tech_milestones"] = sorted(seen & MILESTONES)
     measured = summarize_episode(telemetry)
+    if evidence is not None:
+        from PIL import Image
+        sample = public_observation(observation, noop)
+        frames.append(Image.open(io.BytesIO(base64.b64decode(sample["image_jpeg_base64"]))).copy())
+        frames[0].save(evidence / "replay.gif", save_all=True, append_images=frames[1:], duration=500, loop=0)
+        (evidence / "trajectory.json").write_text(json.dumps({"goals": goals,
+            "completed_objectives": telemetry["completed_objectives"], "steps": records}), encoding="utf-8")
     if set(selected) - set(measured):
         raise ValueError("selected Minecraft metric has no trusted measurement")
     return {key: measured[key] for key in selected}
@@ -163,11 +178,14 @@ def evaluate(config: dict, scenarios: list[dict], environment_factory, socket_pa
             channel = JsonChannel(connection)
             results = []
             for index, scene in enumerate(scenarios):
+                print(f"Minecraft scene {index+1}/{len(scenarios)}: {scene['difficulty']} starting", flush=True)
                 env = environment_factory(scene)
+                evidence = output.parent / "evidence" / str(index + 1)
+                evidence.mkdir(parents=True, exist_ok=True)
                 try:
                     results.append({
                         "scenario": scenario_descriptor(scene, index),
-                        "metrics": run_episode(channel, env, scene, config["metrics"]),
+                        "metrics": run_episode(channel, env, scene, config["metrics"], evidence),
                     })
                 finally:
                     env.close()

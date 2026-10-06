@@ -1,8 +1,8 @@
 [Unit]
 Description=UESTC AI dedicated Docker evaluation worker
-After=network-online.target docker.service nginx.service
+After=network-online.target docker.service nginx.service uestc-evaluation.slice
 Wants=network-online.target
-Requires=docker.service nginx.service
+Requires=docker.service nginx.service uestc-evaluation.slice
 
 [Service]
 User=uestc-worker
@@ -11,6 +11,8 @@ SupplementaryGroups=docker
 WorkingDirectory=/opt/uestc-worker/app
 EnvironmentFile=/etc/uestc-worker/worker.env
 Environment=TMPDIR=/opt/uestc-worker/data/tmp
+RuntimeDirectory=uestc-ai-evaluation
+RuntimeDirectoryPreserve=yes
 ExecStart=/opt/uestc-worker/venv/bin/python -u backend/evaluation_worker.py
 Restart=always
 RestartSec=5

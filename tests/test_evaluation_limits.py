@@ -46,7 +46,10 @@ class EvaluationLimitTests(unittest.TestCase):
         client = client or self.member
         staged = client.post("/api/submission-assets/stage", data={"file": (io.BytesIO(b"test"), "agent.zip")}, content_type="multipart/form-data")
         self.assertEqual(staged.status_code, 201)
-        return client.post("/api/submissions", json={**self.fields, "staged_asset_ids": [staged.get_json()["id"]], **changes})
+        data = {**self.fields, "staged_asset_ids": [staged.get_json()["id"]], **changes}
+        if data["status"] == "draft":
+            return client.post("/api/submissions", json=data)
+        return client.post(f"/api/problems/{data['problem_id']}/evaluation-runs", json=data)
 
     def claim(self):
         response = self.worker.post("/api/evaluation-worker/claim", headers={"Authorization": "Bearer test-worker"}, json={"adapters": [self.config["adapter"]], "gpu": False})
@@ -66,11 +69,11 @@ class EvaluationLimitTests(unittest.TestCase):
         self.assertEqual(self.submit().status_code, 201)
         blocked = self.submit(title="Must not overwrite")
         self.assertEqual(blocked.status_code, 429, blocked.get_json())
-        stored = self.member.get(f"/api/submissions/{first.get_json()['id']}").get_json()
-        self.assertEqual(stored["title"], "Test")
+        stored = self.member.get(f"/api/submissions/{first.get_json()['submission_id']}").get_json()
+        self.assertNotEqual(stored["title"], "Must not overwrite")
         self.assertEqual(self.member.get(self.budget_url).get_json()["remaining_runs"], 0)
         self.assertEqual(self.submit(status="draft").status_code, 201)
-        self.assertEqual(self.member.delete(f"/api/submissions/{first.get_json()['id']}").status_code, 409)
+        self.assertEqual(self.member.delete(f"/api/submissions/{first.get_json()['submission_id']}").status_code, 409)
         self.assertEqual(self.submit().status_code, 429)
 
     def test_budget_changes_keep_usage_and_queued_job_snapshot(self):
@@ -84,6 +87,7 @@ class EvaluationLimitTests(unittest.TestCase):
         job = self.claim()
         self.assertEqual(job["config"]["resources"]["time_seconds"], 60)
         self.assertEqual(self.member.get(self.budget_url).get_json()["used_runs"], 1)
+        self.worker.post(f"/api/evaluation-worker/runs/{job['id']}/complete", headers={"X-Evaluation-Lease": job["lease_token"]}, json={"status": "failed"})
         self.assertEqual(self.submit().status_code, 201)
         self.assertEqual(self.claim()["config"]["resources"]["time_seconds"], 120)
         updated["max_team_runs"] = 1
@@ -140,7 +144,7 @@ class EvaluationLimitTests(unittest.TestCase):
                 client.set_cookie("session_token", cookie.value)
                 staged = client.post("/api/submission-assets/stage", data={"file": (io.BytesIO(b"test"), "agent.zip")}, content_type="multipart/form-data").get_json()
                 barrier.wait(timeout=10)
-                responses.append(client.post("/api/submissions", json={**self.fields, "staged_asset_ids": [staged["id"]]}).status_code)
+                responses.append(client.post(f"/api/problems/{self.problem['id']}/evaluation-runs", json={**self.fields, "staged_asset_ids": [staged["id"]]}).status_code)
             except Exception as error:
                 errors.append(str(error))
         threads = [threading.Thread(target=attempt) for _ in range(2)]
@@ -157,6 +161,9 @@ class EvaluationLimitTests(unittest.TestCase):
     def test_optional_legacy_limit_and_strict_validation(self):
         self.fixture(limit=None)
         self.assertEqual(self.submit().status_code, 201)
+        self.assertEqual(self.submit().status_code, 409)
+        job = self.claim()
+        self.worker.post(f"/api/evaluation-worker/runs/{job['id']}/complete", headers={"X-Evaluation-Lease": job["lease_token"]}, json={"status": "failed"})
         self.assertEqual(self.submit().status_code, 201)
         self.assertIsNone(self.member.get(self.budget_url).get_json()["remaining_runs"])
         for value in (0, -1, 1001, True, 1.5, "3", None):

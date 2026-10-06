@@ -1,0 +1,13 @@
+[Unit]
+Description=Aggregate resource ceiling for all UESTC evaluation containers
+
+[Slice]
+MemoryAccounting=yes
+MemoryMax=6G
+MemorySwapMax=0
+CPUAccounting=yes
+CPUQuota=600%
+TasksMax=2048
+
+[Install]
+WantedBy=multi-user.target

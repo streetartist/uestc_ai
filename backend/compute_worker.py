@@ -7,6 +7,7 @@ from uuid import uuid4
 from platform_api import create_app
 from platform_api.compute import claim_session, heartbeat, process_session
 from platform_api.extensions import db
+from platform_api.judge import claim_pool, process_pool
 
 
 def main():
@@ -30,6 +31,10 @@ def main():
                 session = claim_session(worker_id)
                 if session:
                     process_session(session, worker_id)
+                    heartbeat(worker_id)
+                pool_id = claim_pool(worker_id)
+                if pool_id:
+                    process_pool(pool_id, worker_id)
                     heartbeat(worker_id)
             except Exception:
                 # Do not print credentials, upstream bodies, or DB parameters.

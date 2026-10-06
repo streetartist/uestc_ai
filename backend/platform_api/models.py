@@ -399,6 +399,11 @@ class EvaluationRun(TimestampMixin, db.Model):
     runtime_snapshot = db.Column(db.JSON(none_as_null=True))
     submission_snapshot = db.Column(db.JSON, nullable=False)
     status = db.Column(db.String(24), nullable=False, default="queued", index=True)
+    purpose = db.Column(db.String(24), nullable=False, default="submission", server_default="submission")
+    package_storage_name = db.Column(db.String(255))
+    judge_pool_id = db.Column(db.String(36), db.ForeignKey("evaluation_judge_pools.id"), index=True)
+    worker_id = db.Column(db.String(80), index=True)
+    quota_refunded = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     attempts = db.Column(db.Integer, nullable=False, default=0)
     lease_hash = db.Column(db.String(64))
     api_token_hash = db.Column(db.String(64))
@@ -411,12 +416,23 @@ class EvaluationRun(TimestampMixin, db.Model):
     finished_at = db.Column(db.DateTime(timezone=True))
     problem = db.relationship("Problem", back_populates="evaluation_runs")
     submission_version = db.relationship("SubmissionVersion")
+    artifacts = db.relationship("EvaluationArtifact", back_populates="run", cascade="all, delete-orphan")
 
     def to_dict(self):
+        from .performance_scoring import performance_result
+        from .judge import run_dispatch_status
+        performance = performance_result(self.submission_snapshot.get("performance_scoring"),
+            self.config_snapshot["adapter"], self.episodes) if self.status == "completed" else None
         return {
             "id": self.id, "problem_id": self.problem_id, "submission_version_id": self.submission_version_id,
             "adapter": self.config_snapshot["adapter"], "status": self.status, "attempts": self.attempts,
+            "purpose": self.purpose, "submission_id": self.submission_version.submission_id,
+            "quota_refunded": self.quota_refunded, "dispatch": run_dispatch_status(self),
+            "package_name": self.submission_snapshot.get("asset_name"),
+            "package_sha256": self.submission_snapshot.get("package_sha256"),
             "metrics": self.metrics, "episodes": self.episodes, "error": self.error,
+              "artifacts": [artifact.to_dict() for artifact in self.artifacts],
+            "performance": performance,
             "metric_definitions": self.config_snapshot.get("metric_definitions", []),
             "api_calls_used": self.api_calls_used,
             "time_seconds": self.config_snapshot["resources"]["time_seconds"],

@@ -10,6 +10,17 @@ from pathlib import Path
 
 # An adapter describes a trusted worker image's protocol, not an executable supplied by a contestant.
 ADAPTERS = {
+    "libero-agent-v1": {
+        "name": "LIBERO 机械臂策略与智能体",
+        "submission": {"extension": "zip", "label": "策略或智能体代码与配置（.zip）"},
+        "tasks": ["manipulation"],
+        "metrics": [
+            {"key": "task_success", "label": "任务成功率", "unit": "%", "direction": "max", "min": 0, "max": 100},
+            {"key": "action_count", "label": "控制步数", "unit": "count", "direction": "min", "min": 0, "max": 2000},
+            {"key": "execution_seconds", "label": "执行耗时", "unit": "s", "direction": "min", "min": 0, "max": 14400},
+            {"key": "invalid_actions", "label": "无效动作数", "unit": "count", "direction": "min", "min": 0, "max": 2000},
+        ],
+    },
     "minecraft-agent-v1": {
         "name": "Minecraft 开放世界智能体",
         "submission": {"extension": "zip", "label": "智能体代码与运行配置（.zip）"},
@@ -19,7 +30,7 @@ ADAPTERS = {
             {"key": "survival_seconds", "label": "Survival time", "unit": "s", "direction": "max", "min": 0, "max": 3600},
             {"key": "objectives", "label": "已完成目标数", "unit": "count", "direction": "max", "min": 0, "max": 20},
             {"key": "deaths", "label": "死亡次数", "unit": "count", "direction": "min", "min": 0, "max": 10},
-            {"key": "invalid_actions", "label": "无效动作数", "unit": "count", "direction": "min", "min": 0, "max": 100},
+            {"key": "invalid_actions", "label": "无效动作数", "unit": "count", "direction": "min", "min": 0, "max": 10000},
             {"key": "mean_step_ms", "label": "平均决策耗时", "unit": "ms", "direction": "min", "min": 0, "max": 120000},
             {"key": "api_calls", "label": "API calls", "unit": "count", "direction": "min", "min": 0, "max": 1000},
             {"key": "api_cost", "label": "API cost", "unit": "USD", "direction": "min", "min": 0, "max": 10},
@@ -37,7 +48,7 @@ ADAPTERS = {
             {"key": "accuracy", "label": "Accuracy", "unit": "%", "direction": "max", "min": 0, "max": 100},
             {"key": "macro_f1", "label": "Macro F1", "unit": "%", "direction": "max", "min": 0, "max": 100},
             {"key": "latency_ms", "label": "Inference latency", "unit": "ms", "direction": "min", "min": 0, "max": 5000},
-            {"key": "peak_vram_mb", "label": "Peak GPU memory", "unit": "MB", "direction": "min", "min": 0, "max": 24576},
+            {"key": "peak_vram_mb", "label": "显存占用采样峰值", "unit": "MiB", "direction": "min", "min": 0, "max": 65536},
         ],
     },
     "robot-arm-agent-v1": {
@@ -124,7 +135,7 @@ def validate_evaluation_config(value: object) -> dict:
             raise ValueError(f"{field} must be between {low} and {high}")
     if type(resources["gpu"]) is not bool:
         raise ValueError("gpu must be a boolean")
-    if value["adapter"] == "robot-arm-agent-v1" and resources["gpu"]:
+    if value["adapter"] in {"robot-arm-agent-v1", "libero-agent-v1"} and resources["gpu"]:
         raise ValueError("机械臂首版使用 CPU 仿真与渲染，无需分配 GPU。")
     api = value["api"]
     if not isinstance(api, dict) or set(api) != {"enabled", "max_calls"} or type(api["enabled"]) is not bool:
