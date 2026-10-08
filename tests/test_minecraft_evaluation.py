@@ -230,6 +230,8 @@ class MinecraftEvaluationTests(unittest.TestCase):
             image = "registry.example/trusted@sha256:" + "a" * 64
             agent_image = "registry.example/agent@sha256:" + "b" * 64
             commands = []
+            mounted_output = []
+            uploaded = []
 
             def mount_src(command, destination):
                 mount = next(command[index + 1] for index, value in enumerate(command[:-1])
@@ -238,6 +240,13 @@ class MinecraftEvaluationTests(unittest.TestCase):
 
             def start_controller(command, **kwargs):
                 commands.append(command)
+                output = mount_src(command, "/output")
+                mounted_output.append(output)
+                scene = output / "evidence" / "1"
+                # The trusted container writes into host-owned directories,
+                # even if a root controller would otherwise create them.
+                (scene / "replay.gif").write_bytes(b"GIF89a")
+                (scene / "trajectory.json").write_text('{"steps": []}', encoding="utf-8")
                 if any("type=bind" in part and "dst=/ipc" in part for part in command):
                     (mount_src(command, "/ipc") / "agent.sock").touch()
                 return SimpleNamespace(poll=lambda: None, wait=lambda timeout: 0, returncode=0)
@@ -254,7 +263,7 @@ class MinecraftEvaluationTests(unittest.TestCase):
                     patch.object(evaluation_worker.subprocess, "Popen", side_effect=start_controller), \
                     patch.object(evaluation_worker.subprocess, "run", side_effect=run_docker), \
                     patch.object(evaluation_worker, "heartbeat"), \
-                    patch.object(evaluation_worker, "upload_evidence_file") as upload:
+                    patch.object(evaluation_worker, "upload_evidence_file", side_effect=lambda base, job, name, path: uploaded.append((name, path.read_bytes()))) as upload:
                 def write_package(_base, _path, _lease, destination):
                     destination.write_bytes(b"test package")
 
@@ -263,6 +272,9 @@ class MinecraftEvaluationTests(unittest.TestCase):
                                                    "", "", "", agent_image, str(scenarios))
             self.assertEqual(result["episodes"], [{"task_success": 100}])
             self.assertEqual(upload.call_count, 2)
+            self.assertEqual(uploaded[0], ("scene-1-replay.gif", b"GIF89a"))
+            self.assertEqual(uploaded[1][0], "scene-1-trajectory.json")
+            self.assertFalse(mounted_output[0].exists())
             containers = [command for command in commands if command[:2] == ["docker", "run"]]
             self.assertEqual(len(containers), 2)
             self.assertNotIn("/input/package.zip", " ".join(containers[0]))

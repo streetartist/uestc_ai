@@ -44,6 +44,8 @@ class AutoDL:
                 result = json.loads(raw)
         except (urllib.error.URLError, TimeoutError, OSError, ValueError):
             raise GatewayError("AutoDL 暂时无法连接，操作结果待确认。", 502, "provider_unavailable") from None
+        if isinstance(result, dict) and result.get("code") == "RecordNotFoundError" and action == "status":
+            raise GatewayError("AutoDL 中已找不到已登记实例，请组织方重新配置。", 502, "provider_instance_missing")
         if not isinstance(result, dict) or result.get("code") != "Success":
             raise GatewayError("AutoDL 未确认操作成功，请检查渠道凭据、余额和库存。", 502, "provider_rejected")
         return result.get("data")

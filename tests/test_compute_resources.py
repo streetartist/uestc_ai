@@ -50,6 +50,12 @@ class AutoDLService(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         cls.calls.append((self.command, action, body, self.headers.get("Authorization")))
         assert self.headers.get("Authorization") == "private-autodl-token"
+        if action == "status" and body["instance_uuid"] not in cls.instances:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"code": "RecordNotFoundError", "msg": "未查询到相关实例"}).encode())
+            return
         code = 200
         if action == "create":
             remote = "pro-local-" + str(len(cls.instances) + 1)
@@ -155,6 +161,17 @@ class ComputeResourcesTest(unittest.TestCase):
         response = self.admin.put(f"/api/compute/manage/problems/{problem}/quota", json=config)
         self.assertEqual(response.status_code, status, response.json)
         return response
+
+    def test_missing_autodl_instance_has_distinct_safe_error(self):
+        from platform_api.autodl import AutoDL
+        from platform_api.ai_gateway import GatewayError
+        with self.app.app_context():
+            provider = ComputeProvider.query.one()
+            with self.assertRaises(GatewayError) as raised:
+                AutoDL(provider).status("pro-deleted")
+            self.assertEqual(raised.exception.code, "provider_instance_missing")
+            self.assertNotIn("private-autodl-token", str(raised.exception))
+        self.assertEqual(AutoDLService.calls[-1][:3], ("GET", "status", {"instance_uuid": "pro-deleted"}))
 
     def start(self, request_id="request-1", seconds=60, client=None, grant=None, status=202):
         response = (client or self.member).post(f"/api/compute/grants/{grant or self.grant['id']}/start", json={"request_id": request_id, "duration_seconds": seconds})

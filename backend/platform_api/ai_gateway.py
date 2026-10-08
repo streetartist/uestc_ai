@@ -75,7 +75,7 @@ def upstream_request(channel: AIChannel, key: str, endpoint: str, payload=None, 
     url = channel.base_url.rstrip("/") + "/" + endpoint
     if channel.protocol == "custom":
         url = channel.base_url
-    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    headers = {"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "uestc-ai-platform/1.0"}
     if channel.protocol == "anthropic":
         headers.update({"x-api-key": key, "anthropic-version": "2023-06-01"})
     else:

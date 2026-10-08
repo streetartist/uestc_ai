@@ -58,6 +58,7 @@ class AutomaticJudgeTests(unittest.TestCase):
         self.fixture(adapter="classification-v1")
         self.config["resources"]["gpu"] = True
         self.app.config["AI_GATEWAY_ENCRYPTION_KEY"] = "judge-unit-secret"
+        self.app.config["EVALUATION_API_BASE"] = "https://example.test/api"
         self.runtime_config = {"execution": "autodl-native", "image": "image-organizer",
             "agent_image": "", "scenarios": [{"dataset": "private-depth", "manifest_sha256": "a" * 64}]}
         response = self.admin.put(f"/api/manage/problems/{self.problem['id']}/setup",
@@ -134,6 +135,44 @@ class AutomaticJudgeTests(unittest.TestCase):
         self.advertise()
         self.assertEqual(len(self.api.calls), 1)
         self.assertEqual(self.claim().status_code, 200)
+
+    def test_replacement_image_boot_creates_private_connection_config(self):
+        import base64
+        import json
+        import re
+        import tempfile
+        from platform_api.judge import startup_command
+        self.prepare()
+        with self.app.app_context():
+            self.app.config['EVALUATION_WORKER_TOKEN'] = "secret with spaces ' and $()"
+            command = startup_command(db.session.get(JudgePool, self.pool_id))
+        payload = re.search(r"b64decode\((?:'|\"|\\')*([A-Za-z0-9+/=]+)", command).group(1)
+        files = json.loads(base64.b64decode(payload))
+        self.assertIn('EVALUATION_API_BASE=https://example.test/api', files['worker.env'])
+        self.assertIn('EVALUATION_AUTODL_IMAGE_UUID=image-organizer', files['worker.env'])
+        self.assertIn('EVALUATION_WORKER_ID=trusted-judge', files['worker.env'])
+        import shlex
+        token_line = next(line for line in files['worker.env'].splitlines() if line.startswith('EVALUATION_WORKER_TOKEN='))
+        self.assertEqual(shlex.split(token_line.split('=', 1)[1]), [self.app.config['EVALUATION_WORKER_TOKEN']])
+        self.assertNotIn('/etc/uestc-classification.env', command)
+        self.assertIn('chmod(384)', command)
+        with tempfile.TemporaryDirectory() as directory:
+            directory_path = Path(directory)
+            tokens = shlex.split(command)
+            bootstrap = tokens[tokens.index('-c') + 1]
+            with patch('pathlib.Path', return_value=directory_path):
+                exec(bootstrap, {})
+            self.assertEqual((Path(directory) / 'worker.env').read_text(encoding='utf-8'), files['worker.env'])
+
+    def test_native_boot_rejects_missing_or_insecure_api_base(self):
+        from platform_api.judge import startup_command
+        self.prepare()
+        with self.app.app_context():
+            pool = db.session.get(JudgePool, self.pool_id)
+            for value in ['', 'http://example.test/api', 'https://secret@example.test/api']:
+                self.app.config['EVALUATION_API_BASE'] = value
+                with self.assertRaises(GatewayError):
+                    startup_command(pool)
 
     def test_boot_rejection_and_timeout_refund_only_once(self):
         for rejected in [True, False]:
@@ -221,6 +260,23 @@ class AutomaticJudgeTests(unittest.TestCase):
         self.assertEqual(blocked.status_code, 409, blocked.get_json())
         self.assertIn("schedule", [c["key"] for c in blocked.get_json()["checks"]])
         self.assertEqual(self.member.get(self.budget_url).get_json()["used_runs"], 0)
+
+    def test_deleted_instance_refunds_unstarted_trial_once_without_power_actions(self):
+        self.prepare()
+        run = self.start(self.stage()).get_json()
+        with patch.object(self.api, "status", side_effect=GatewayError("deleted", 502, "provider_instance_missing")):
+            self.tick()
+            self.tick()
+        with self.app.app_context():
+            pool = db.session.get(JudgePool, self.pool_id)
+            job = db.session.get(EvaluationRun, run["id"])
+            self.assertEqual((pool.state, pool.provider_status), ("error", "missing"))
+            self.assertIn("已被删除", pool.error)
+            self.assertEqual(job.status, "failed")
+            self.assertTrue(job.quota_refunded)
+        self.assertEqual(self.api.calls, [])
+        self.assertEqual(self.member.get(self.budget_url).get_json()["used_runs"], 0)
+        self.assertEqual(self.start(self.stage()).status_code, 503)
 
     def test_admin_only_registration_and_mismatched_runtime_blocked(self):
         self.prepare()

@@ -198,11 +198,26 @@
   ],
   "production_worker_state": "automatic_queue_wake_idle_shutdown",
   "production_competition_trial_tested": false,
+  "participant_workflow_acceptance": {
+    "date": "2026-10-07",
+    "status": "passed",
+    "production_site": true,
+    "separate_acceptance_competition": true,
+    "ordinary_member_browser_flow": true,
+    "real_samples": 470,
+    "gpu": "NVIDIA GeForce RTX 4080 32GB",
+    "trained_model": false,
+    "formal_selection_no_extra_trial": true,
+    "reviewer_ui_and_save": true,
+    "confusion_matrix_verified": true,
+    "idle_shutdown_verified": true,
+    "temporary_records_hidden": true
+  },
   "production_runtime": {
     "image": "image-042030ef49",
     "dataset": "wujie-depth-v1",
     "worker_id": "wujie-classification-v4-formal",
-    "instance_uuid": "pro-7912ff659683"
+    "instance_uuid": "pro-791361cf7861"
   },
   "training_policy": {
     "gpu": "RTX 4080 SUPER 32GB",
@@ -216,7 +231,7 @@
     "production_compute_monitor": "online"
   },
   "automatic_judge": {
-    "instance_uuid": "pro-7912ff659683",
+    "instance_uuid": "pro-791361cf7861",
     "idle_seconds": 120,
     "boot_seconds": 600,
     "hard_uptime_seconds": 14400,
