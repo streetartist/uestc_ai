@@ -7,6 +7,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 
+from .csrf import init_origin_guard
 from .extensions import db, migrate
 from .routes.auth import auth_bp
 from .routes.competitions import competitions_bp
@@ -26,6 +27,33 @@ from .routes.evaluation_evidence import evidence_bp
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_ROOT / ".env")
+
+WEAK_SECRET_KEYS = {
+    "dev-change-me",
+    "dev-only-change-me-before-production",
+    "change-me",
+    "changeme",
+}
+MIN_SECRET_KEY_LENGTH = 16
+
+
+def _require_strong_secret_key(app: Flask) -> None:
+    """Refuse to start a non-development app with a missing or placeholder SECRET_KEY."""
+    if (
+        app.config.get("TESTING")
+        or app.debug
+        or app.config.get("AUTO_CREATE_SCHEMA")
+        or app.config.get("SEED_DATABASE")
+    ):
+        return
+    secret = str(app.config.get("SECRET_KEY") or "").strip()
+    if not secret or secret.lower() in WEAK_SECRET_KEYS or len(secret) < MIN_SECRET_KEY_LENGTH:
+        raise RuntimeError(
+            "SECRET_KEY must be set to a strong random value of at least "
+            f"{MIN_SECRET_KEY_LENGTH} characters (not a placeholder) unless running locally "
+            "with AUTO_CREATE_SCHEMA=1 or SEED_DATABASE=1. Generate one with: "
+            'python -c "import secrets; print(secrets.token_urlsafe(48))"'
+        )
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -85,6 +113,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         from werkzeug.middleware.proxy_fix import ProxyFix
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
+    _require_strong_secret_key(app)
+
     if app.config["SEED_DATABASE"] and (
         not app.config["INITIAL_ADMIN_PASSWORD"]
         or not app.config["INITIAL_REVIEWER_PASSWORD"]
@@ -107,6 +137,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         resources={r"/api/*": {"origins": allowed_origins}},
         supports_credentials=True,
     )
+    init_origin_guard(app, allowed_origins)
     db.init_app(app)
     migrate.init_app(
         app,

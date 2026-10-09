@@ -32,7 +32,7 @@ Web API 负责业务数据和材料流转；可选的独立工作进程通过受
 
 ### 环境要求
 
-- Node.js 24.19.0（本项目已验证的构建版本；Windows 上 Node.js 25.2.1 会在 RSC 构建阶段异常退出）
+- Node.js 22.13.0 或更高版本（与 `package.json` 的 `engines`、CI、CONTRIBUTING.md 一致）；维护者记录 24.19.0 为已验证的构建版本；维护者记录 Windows 上 Node.js 25.2.1 会在 RSC 构建阶段异常退出，请避免使用
 - pnpm 10.18.2
 - Python 3.11 或更高版本
 

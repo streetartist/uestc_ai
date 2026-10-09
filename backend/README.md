@@ -22,7 +22,7 @@ API 默认监听 `http://127.0.0.1:5000`，健康检查位于 `GET /api/health`�
 | 环境变量 | 用途 | 生产要求 |
 | --- | --- | --- |
 | `DATABASE_URL` | SQLAlchemy 数据库 URL | 使用 PostgreSQL |
-| `SECRET_KEY` | 验证码散列与 Flask 密钥 | 使用长随机值 |
+| `SECRET_KEY` | 验证码散列与 Flask 密钥 | 使用长随机值（至少 16 个字符）；未开启 `AUTO_CREATE_SCHEMA`/`SEED_DATABASE` 且缺失、为占位值或过短时 API 拒绝启动 |
 | `CORS_ORIGINS` | 逗号分隔的允许来源 | 设置精确 HTTPS 来源 |
 | `SESSION_COOKIE_SECURE` | 仅通过 HTTPS 发送会话 Cookie | 设为 `1` |
 | `SESSION_COOKIE_SAMESITE` | 会话 Cookie SameSite 策略 | 按部署拓扑设置 |

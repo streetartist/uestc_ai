@@ -23,6 +23,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm audit --prod --audit-level=moderate
       - run: pnpm lint
+      - run: pnpm exec tsc --noEmit
       - run: pnpm test
 
   backend:
