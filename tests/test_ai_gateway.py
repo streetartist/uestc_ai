@@ -8,6 +8,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -24,6 +25,7 @@ from platform_api.security import hash_token
 class Provider(BaseHTTPRequestHandler):
     calls = []
     lock = threading.Lock()
+    require_user_agent = False
 
     def log_message(self, *_args):
         pass
@@ -38,6 +40,9 @@ class Provider(BaseHTTPRequestHandler):
         self.send(200, {"data": [{"id": "provider-model"}]})
 
     def do_POST(self):
+        if self.require_user_agent and self.headers.get("User-Agent") != "uestc-ai-platform/1.0":
+            self.send(403, {"error": "client identification required"})
+            return
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         with self.lock:
             self.calls.append((self.path, body, self.headers.get("Authorization")))
@@ -142,6 +147,13 @@ class AIGatewayTest(unittest.TestCase):
     def wire_model(self, value):
         result = self.admin.patch("/api/ai/manage/channels/" + self.channel["id"], json={"models": {"contest-model": value}})
         self.assertEqual(result.status_code, 200)
+
+    def test_provider_requiring_client_identification_accepts_metered_request(self):
+        with patch.object(Provider, "require_user_agent", True):
+            response = self.call()
+        self.assertEqual(response.status_code, 200, response.get_json())
+        overview = self.member.get("/api/ai/overview").get_json()
+        self.assertEqual(overview["summary"]["charged_tokens"], 10)
 
     def test_normal_flow_model_alias_usage_and_secret_isolation(self):
         self.assertEqual(self.member.get("/api/ai/v1/models", headers=self.headers).get_json()["data"][0]["id"], "contest-model")

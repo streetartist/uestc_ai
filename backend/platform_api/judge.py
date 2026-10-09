@@ -7,6 +7,7 @@ stopped and unstarted trials are refunded. No instance creation is supported.
 import base64
 import json
 import shlex
+from urllib.parse import urlsplit
 from datetime import timedelta, timezone
 from pathlib import Path
 
@@ -85,24 +86,42 @@ def bind_run(run, problem):
         run.judge_pool_id = pool.id
 
 
-def startup_command(pool):
+def startup_command(pool, *, uptime_seconds=MAX_UPTIME_SECONDS):
     from flask import current_app
+    if type(uptime_seconds) is not int or not 60 <= uptime_seconds <= 7 * 86400:
+        raise ValueError("GPU uptime must be between 60 and 604800 seconds")
+    base = current_app.config.get("EVALUATION_API_BASE", "").rstrip("/")
+    parsed = urlsplit(base)
+    token = current_app.config["EVALUATION_WORKER_TOKEN"]
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or not token:
+        raise GatewayError("GPU worker requires a public HTTPS API base and worker token", 503, "judge_configuration_missing")
+    # Saved images deliberately contain no deployment credentials. Recreate the
+    # organizer-only connection file on every boot, including replacement nodes.
+    environment = {
+        "EVALUATION_API_BASE": base,
+        "EVALUATION_WORKER_TOKEN": token,
+        "EVALUATION_AUTODL_IMAGE_UUID": pool.image,
+        "EVALUATION_WORKER_ID": pool.worker_id,
+        "EVALUATION_API_ORIGIN_IP": current_app.config.get("EVALUATION_API_ORIGIN_IP", ""),
+        "EVALUATION_CLASSIFICATION_DATASETS": "/opt/uestc-classification/datasets",
+        "EVALUATION_LOG_DIRECTORY": "/root/autodl-tmp/uestc-evaluation/logs",
+        "EVALUATION_MODEL_HOSTS": "huggingface.co,*.huggingface.co,*.hf.co",
+    }
     root = Path(__file__).resolve().parents[1]
     overlay = {"classification-evidence-worker.py": (root.parent / "deploy/linux/classification-evidence-worker.py").read_text(encoding="utf-8"),
                "evaluation_evidence.py": (root / "evaluation_evidence.py").read_text(encoding="utf-8"),
                "evaluation_transport.py": (root / "evaluation_transport.py").read_text(encoding="utf-8")}
+    overlay["worker.env"] = "\n".join(f"{key}={shlex.quote(value)}" for key, value in environment.items()) + "\n"
     encoded = base64.b64encode(json.dumps(overlay).encode()).decode()
     bootstrap = ("import base64,json;from pathlib import Path;"
-        "p=Path('/root/autodl-tmp/uestc-evaluation/evidence-overlay');p.mkdir(parents=True,exist_ok=True);"
+        "p=Path('/root/autodl-tmp/uestc-evaluation/evidence-overlay');p.mkdir(parents=True,exist_ok=True);p.chmod(448);"
         f"d=json.loads(base64.b64decode('{encoded}'));"
         "[(p.joinpath(k).write_text(v,encoding='utf-8'),p.joinpath(k).chmod(384)) for k,v in d.items()]")
-    worker = ("set -a; . /etc/uestc-classification.env; set +a; "
-        f"export EVALUATION_WORKER_ID={shlex.quote(pool.worker_id)}; "
-        f"export EVALUATION_API_ORIGIN_IP={shlex.quote(current_app.config.get('EVALUATION_API_ORIGIN_IP', ''))}; "
+    worker = ("set -a; . /root/autodl-tmp/uestc-evaluation/evidence-overlay/worker.env; set +a; "
         "exec /opt/uestc-classification/runtime/bin/python /root/autodl-tmp/uestc-evaluation/evidence-overlay/classification-evidence-worker.py")
     # Independent hard cap protects against a complete website/API outage. The
     # scheduler drains at 3h so a 30min job finishes before this fallback.
-    return (f"(sleep {MAX_UPTIME_SECONDS}; /usr/bin/shutdown) >/tmp/contest-auto-stop.log 2>&1 & "
+    return (f"(sleep {uptime_seconds}; /usr/bin/shutdown) >/tmp/contest-auto-stop.log 2>&1 & "
         f"/opt/uestc-classification/runtime/bin/python -c {shlex.quote(bootstrap)} && "
         f"nohup bash -c {shlex.quote(worker)} >>/root/autodl-tmp/uestc-evaluation/worker.log 2>&1 & sleep 1")
 
@@ -221,6 +240,11 @@ def process_pool(pool_id, owner, api_factory=AutoDL):
             pool.checked_at = utcnow()
             # Never store upstream responses or secrets.
             pool.error = "AutoDL 暂时无法确认状态，平台正在重试核对。"
+            if error.code == "provider_instance_missing":
+                pool.error = "组织方 GPU 测评实例已被删除，请重新登记测评实例；未执行测试次数已退回。"
+                pool.provider_status = "missing"
+                pool.state, pool.retry_at = "error", None
+                refund_unstarted(pool, pool.error)
             if error.code == "provider_rejected" and pool.state == "starting":
                 pool.error = "AutoDL 拒绝开机，请组织方检查库存、余额和渠道；未执行次数已退回。"
                 refund_unstarted(pool, pool.error)

@@ -88,6 +88,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         AUTO_CREATE_SCHEMA=os.environ.get("AUTO_CREATE_SCHEMA", "0") == "1",
         SEED_DATABASE=os.environ.get("SEED_DATABASE", "0") == "1",
         EVALUATION_WORKER_TOKEN=os.environ.get("EVALUATION_WORKER_TOKEN", ""),
+        EVALUATION_API_BASE=os.environ.get("EVALUATION_API_BASE", ""),
         EVALUATION_ENABLED_ADAPTERS=os.environ.get("EVALUATION_ENABLED_ADAPTERS", ""),
         EVALUATION_API_URL=os.environ.get("EVALUATION_API_URL", ""),
         EVALUATION_API_KEY=os.environ.get("EVALUATION_API_KEY", ""),

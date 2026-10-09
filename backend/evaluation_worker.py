@@ -123,6 +123,17 @@ def execute_isolated_agent(base: str, job: dict, trusted_image: str, agent_image
         controller_user = os.getuid() if robot and hasattr(os, 'getuid') else 0
         output.mkdir(mode=0o770)
         os.chmod(output, 0o770)
+        # Minecraft runs as container root. Precreate every evidence directory
+        # as the host worker so nested root-owned files remain removable after
+        # upload. The contestant never receives this mount; the outer temp
+        # directory remains private to the worker.
+        evidence = output / "evidence"
+        evidence.mkdir(mode=0o770)
+        evidence.chmod(0o770)
+        for index in range(1, resources["episodes"] + 1):
+            scene_output = evidence / str(index)
+            scene_output.mkdir(mode=0o770)
+            scene_output.chmod(0o770)
         ipc.mkdir(mode=0o775)
         os.chmod(ipc, 0o775)
         download(base, job["asset_url"], job["lease_token"], inputs / "package.zip")
