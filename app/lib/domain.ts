@@ -116,6 +116,7 @@ export type EvaluationRun = {
   episodes: Array<Record<string, number> | {
     scenario: { id: string; label: string; difficulty: "beginner" | "intermediate" | "challenge" };
     metrics: Record<string, number>;
+    objectives?: Array<{ id: string; label: string; completed: boolean }>;
   }>;
   error: string | null;
   created_at: string;

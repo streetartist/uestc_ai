@@ -66,7 +66,8 @@ def scenario_descriptor(scenario: dict, index: int) -> dict[str, str]:
     }
 
 
-def run_episode(channel: JsonChannel, env, scenario: dict, selected: list[str], evidence: Path | None = None) -> dict[str, float]:
+def run_episode(channel: JsonChannel, env, scenario: dict, selected: list[str],
+                evidence: Path | None = None) -> dict:
     import numpy as np
 
     goals = scenario["goals"]
@@ -133,7 +134,15 @@ def run_episode(channel: JsonChannel, env, scenario: dict, selected: list[str], 
             "completed_objectives": telemetry["completed_objectives"], "steps": records}), encoding="utf-8")
     if set(selected) - set(measured):
         raise ValueError("selected Minecraft metric has no trusted measurement")
-    return {key: measured[key] for key in selected}
+    completed = set(telemetry["completed_objectives"])
+    labels = scenario.get("objective_labels", goals)
+    return {
+        "metrics": {key: measured[key] for key in selected},
+        "objectives": [
+            {"id": goal, "label": label, "completed": goal in completed}
+            for goal, label in zip(goals, labels)
+        ],
+    }
 
 
 def validate_scenarios(scenarios, episodes):
@@ -156,6 +165,10 @@ def validate_scenarios(scenarios, episodes):
                 or not isinstance(scene.get("label"), str) or not 1 <= len(scene["label"]) <= 80
                 or scene.get("difficulty") not in DIFFICULTIES):
             raise ValueError("Minecraft scenario needs a unique id, label and valid difficulty")
+        labels = scene.get("objective_labels")
+        if labels is not None and (not isinstance(labels, list) or len(labels) != len(scene["goals"])
+                or any(not isinstance(label, str) or not 1 <= len(label) <= 80 for label in labels)):
+            raise ValueError("Minecraft objective labels must match the scene goals")
         scenario_ids.add(scene["id"])
 
 
@@ -183,10 +196,8 @@ def evaluate(config: dict, scenarios: list[dict], environment_factory, socket_pa
                 evidence = output.parent / "evidence" / str(index + 1)
                 evidence.mkdir(parents=True, exist_ok=True)
                 try:
-                    results.append({
-                        "scenario": scenario_descriptor(scene, index),
-                        "metrics": run_episode(channel, env, scene, config["metrics"], evidence),
-                    })
+                    outcome = run_episode(channel, env, scene, config["metrics"], evidence)
+                    results.append({"scenario": scenario_descriptor(scene, index), **outcome})
                 finally:
                     env.close()
             channel.send({"type": "done"})

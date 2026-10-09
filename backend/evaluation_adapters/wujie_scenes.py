@@ -6,15 +6,20 @@ def minecraft_scenes(seeds=(42, 43, 44)):
     if len(seeds) != 3:
         raise ValueError("Minecraft needs three independent world seeds")
     tiers = [
-        ("woodcraft", "入门：木制工具链", "beginner", 600, ["log", "planks", "crafting_table"]),
+        ("woodcraft", "入门：木制工具链", "beginner", 600,
+         [("log", "获取原木"), ("planks", "制作木板"), ("crafting_table", "制作工作台")]),
         ("stone-tools", "进阶：石器工具链", "intermediate", 1500,
-         ["wooden_pickaxe", "cobblestone", "stone_pickaxe", "furnace"]),
-        ("iron-age", "挑战：铁器工具链", "challenge", 3000, ["iron_ore", "iron_ingot", "iron_pickaxe"]),
+         [("wooden_pickaxe", "制作木镐"), ("cobblestone", "开采圆石"),
+          ("stone_pickaxe", "制作石镐"), ("furnace", "制作熔炉")]),
+        ("iron-age", "挑战：铁器工具链", "challenge", 3000,
+         [("iron_ore", "开采铁矿"), ("iron_ingot", "冶炼铁锭"), ("iron_pickaxe", "制作铁镐")]),
     ]
     return [{"id": identifier, "label": label, "difficulty": difficulty,
              "task_id": "open-ended", "world_seed": seed, "max_steps": steps,
-             "goals": goals, "initial_inventory": []}
-            for seed, (identifier, label, difficulty, steps, goals) in zip(seeds, tiers)]
+             "goals": [goal for goal, _ in objectives],
+             "objective_labels": [label for _, label in objectives],
+             "initial_inventory": []}
+            for seed, (identifier, label, difficulty, steps, objectives) in zip(seeds, tiers)]
 
 
 # Task IDs refer to upstream's task_order_index=0, not a shuffled task order.

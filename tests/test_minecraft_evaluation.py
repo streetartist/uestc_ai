@@ -131,7 +131,8 @@ class MinecraftEvaluationTests(unittest.TestCase):
             scenarios = [
                 {
                     "id": identifier, "label": label, "difficulty": difficulty,
-                    "task_id": "open-ended", "world_seed": seed, "max_steps": 5, "goals": goals,
+                    "task_id": "open-ended", "world_seed": seed, "max_steps": 5,
+                    "goals": goals, "objective_labels": [f"目标 {index + 1}" for index in range(len(goals))],
                 }
                 for identifier, label, difficulty, seed, goals in (
                     ("woodcraft", "入门：从零开始", "beginner", 1, ["log"]),
@@ -180,6 +181,21 @@ class MinecraftEvaluationTests(unittest.TestCase):
             self.assertEqual([item["scenario"]["difficulty"] for item in results], ["beginner", "intermediate", "challenge"])
             self.assertEqual([item["metrics"]["task_success"] for item in results], [100, 100, 100])
             self.assertEqual([item["metrics"]["distance_blocks"] for item in results], [5, 10, 15])
+            self.assertEqual([objective["completed"] for objective in results[2]["objectives"]], [True, True, True])
+            self.assertEqual(results[2]["objectives"][1], {
+                "id": "iron_ingot", "label": "目标 2", "completed": True,
+            })
+
+    def test_objective_labels_must_match_scene_goals(self):
+        from evaluation_adapters.minecraft_runner import validate_scenarios
+
+        scene = {
+            "id": "bad-labels", "label": "标签错误", "difficulty": "beginner",
+            "task_id": "open-ended", "world_seed": 1, "max_steps": 10,
+            "goals": ["log", "planks"], "objective_labels": ["获取原木"],
+        }
+        with self.assertRaisesRegex(ValueError, "objective labels"):
+            validate_scenarios([scene], 1)
 
     def test_private_scenario_file_has_three_difficulty_levels(self):
         path = Path(__file__).resolve().parents[1] / "backend" / "data" / "minecraft-scenarios.json"

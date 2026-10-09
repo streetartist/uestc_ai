@@ -1,5 +1,6 @@
 import type { EvaluationConfig, EvaluationRun } from "@/app/lib/domain";
 import { resolveMarkdownUrl } from "@/app/lib/api";
+import { Check, Circle } from "lucide-react";
 
 const statusLabels: Record<EvaluationRun["status"], string> = {
   queued: "等待运行", running: "正在运行", completed: "运行完成", failed: "运行失败", superseded: "已更新提交",
@@ -34,6 +35,12 @@ export function EvaluationMetrics({ config, run }: { config?: EvaluationConfig; 
           const metrics = wrapped ? episode.metrics : episode;
           return <article key={scenario.id}>
             <header><strong>{scenario.label}</strong><span>{difficultyLabels[scenario.difficulty]}</span></header>
+            {wrapped && episode.objectives?.length ? <ul className="evaluation-objectives">
+              {episode.objectives.map((objective) => <li className={objective.completed ? "completed" : ""} key={objective.id}>
+                {objective.completed ? <Check aria-hidden="true" size={15} /> : <Circle aria-hidden="true" size={15} />}
+                <span>{objective.label}</span><code>{objective.id}</code>
+              </li>)}
+            </ul> : null}
             <dl>{config.metrics.map((key) => <div key={key}><dt>{definitions[key]?.label ?? key}</dt><dd>{metricValue(metrics[key], definitions[key]?.unit)}</dd></div>)}</dl>
           </article>;
         })}

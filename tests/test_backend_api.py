@@ -345,11 +345,26 @@ class PlatformApiTestCase(unittest.TestCase):
             "status": "completed", "episodes": [{"task_success": float("nan"), "deaths": 0}, {"task_success": 100, "deaths": 0}],
         })
         self.assertEqual(invalid_result.status_code, 400)
+        invalid_objectives = worker.post(f"/api/evaluation-worker/runs/{task['id']}/complete", headers=lease, json={
+            "status": "completed", "episodes": [
+                {
+                    "scenario": {"id": "easy", "label": "入门", "difficulty": "beginner"},
+                    "metrics": {"task_success": 100, "deaths": 0},
+                    "objectives": [{"id": "log", "label": "获取原木", "completed": "yes"}],
+                },
+                {"task_success": 0, "deaths": 1},
+            ],
+        })
+        self.assertEqual(invalid_objectives.status_code, 400)
         completed = worker.post(f"/api/evaluation-worker/runs/{task['id']}/complete", headers=lease, json={
             "status": "completed", "episodes": [
                 {
                     "scenario": {"id": "easy", "label": "入门：从零开始", "difficulty": "beginner"},
                     "metrics": {"task_success": 100, "deaths": 0},
+                    "objectives": [
+                        {"id": "log", "label": "获取原木", "completed": True},
+                        {"id": "planks", "label": "制作木板", "completed": True},
+                    ],
                 },
                 {
                     "scenario": {"id": "hard", "label": "挑战：铁器时代", "difficulty": "challenge"},
@@ -360,6 +375,7 @@ class PlatformApiTestCase(unittest.TestCase):
         self.assertEqual(completed.status_code, 200, completed.get_json())
         self.assertEqual(completed.get_json()["metrics"], {"task_success": 50, "deaths": 1})
         self.assertEqual(completed.get_json()["episodes"][0]["scenario"]["label"], "入门：从零开始")
+        self.assertEqual(completed.get_json()["episodes"][0]["objectives"][1]["label"], "制作木板")
         self.assertEqual(completed.get_json()["episodes"][0]["metrics"], {"task_success": 100, "deaths": 0})
         self.assertEqual(completed.get_json()["api_calls_used"], 1)
         self.assertNotIn("total_score", completed.get_json())

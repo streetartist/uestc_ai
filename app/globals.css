@@ -1115,4 +1115,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .evaluation-episodes article > header { margin-bottom: 12px; }
 .evaluation-episodes article > header span { padding: 3px 8px; border-radius: 999px; background: var(--soft); }
 .evaluation-episodes article dl { margin-bottom: 0; }
+.evaluation-objectives { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 7px 12px; margin: 0 0 14px; padding: 0; list-style: none; }
+.evaluation-objectives li { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 7px; min-width: 0; color: var(--muted); font-size: 13px; }
+.evaluation-objectives li.completed { color: var(--ink); }
+.evaluation-objectives svg { flex: 0 0 15px; }
+.evaluation-objectives code { overflow: hidden; max-width: 120px; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 600px) { .evaluation-resource-grid, .evaluation-metric-picker > div { grid-template-columns: 1fr; } }

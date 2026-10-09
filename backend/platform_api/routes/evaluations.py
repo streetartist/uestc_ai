@@ -365,7 +365,8 @@ def complete_run(run_id: str):
             readings = []
             stored_episodes = []
             for index, item in enumerate(episodes):
-                if isinstance(item, dict) and set(item) == {"scenario", "metrics"}:
+                if isinstance(item, dict) and set(item) in (
+                        {"scenario", "metrics"}, {"scenario", "metrics", "objectives"}):
                     scenario = item["scenario"]
                     if (not isinstance(scenario, dict) or set(scenario) != {"id", "label", "difficulty"}
                             or not isinstance(scenario["id"], str) or not 1 <= len(scenario["id"]) <= 64
@@ -373,7 +374,22 @@ def complete_run(run_id: str):
                             or scenario["difficulty"] not in {"beginner", "intermediate", "challenge"}):
                         raise ValueError("invalid evaluation scenario metadata")
                     metrics = validate_metrics(run.config_snapshot, item["metrics"])
-                    stored_episodes.append({"scenario": scenario, "metrics": metrics})
+                    stored = {"scenario": scenario, "metrics": metrics}
+                    if "objectives" in item:
+                        objectives = item["objectives"]
+                        if (not isinstance(objectives, list) or not 1 <= len(objectives) <= 20
+                                or any(not isinstance(objective, dict)
+                                       or set(objective) != {"id", "label", "completed"}
+                                       or not isinstance(objective["id"], str)
+                                       or not 1 <= len(objective["id"]) <= 160
+                                       or not isinstance(objective["label"], str)
+                                       or not 1 <= len(objective["label"]) <= 80
+                                       or type(objective["completed"]) is not bool
+                                       for objective in objectives)
+                                or len({objective["id"] for objective in objectives}) != len(objectives)):
+                            raise ValueError("invalid evaluation objective metadata")
+                        stored["objectives"] = objectives
+                    stored_episodes.append(stored)
                 else:
                     metrics = validate_metrics(run.config_snapshot, item)
                     stored_episodes.append({

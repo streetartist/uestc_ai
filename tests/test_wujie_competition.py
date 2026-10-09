@@ -40,6 +40,8 @@ class WujieCompetitionTests(unittest.TestCase):
                     scenes = track["setup"]["runtime"]["scenarios"]
                     self.assertEqual([s["max_steps"] for s in scenes], [600, 1500, 3000])
                     self.assertEqual([len(s["goals"]) for s in scenes], [3, 4, 3])
+                    self.assertEqual(scenes[1]["objective_labels"],
+                                     ["制作木镐", "开采圆石", "制作石镐", "制作熔炉"])
                     self.assertTrue(all(s["initial_inventory"] == [] for s in scenes))
                 if track["slug"] == "embodied-agent":
                     self.assertEqual(problem["evaluation_config"]["adapter"], "libero-agent-v1")
