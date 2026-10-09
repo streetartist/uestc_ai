@@ -5,9 +5,12 @@ from pathlib import Path
 from uuid import uuid4
 
 
+MAX_EVIDENCE_BYTES = 25 * 1024 * 1024
+
+
 def upload(base, job, name, path):
-    if not path.is_file() or path.stat().st_size > 5 * 1024 * 1024:
-        raise ValueError("trusted evidence exceeds 5 MB")
+    if not path.is_file() or path.stat().st_size > MAX_EVIDENCE_BYTES:
+        raise ValueError("trusted evidence exceeds 25 MB")
     boundary = "uestc" + uuid4().hex
     prefix = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"name\"\r\n\r\n{name}\r\n"
               f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{name}\"\r\n"
@@ -16,7 +19,7 @@ def upload(base, job, name, path):
         data=prefix + path.read_bytes() + f"\r\n--{boundary}--\r\n".encode(), method="POST",
         headers={"User-Agent": "Mozilla/5.0 UESTC-EvaluationCheck", "X-Evaluation-Lease": job["lease_token"],
                  "Content-Type": "multipart/form-data; boundary=" + boundary})
-    with urllib.request.urlopen(request, timeout=40) as response:
+    with urllib.request.urlopen(request, timeout=120) as response:
         return json.load(response)
 
 

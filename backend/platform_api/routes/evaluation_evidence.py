@@ -14,7 +14,7 @@ from ..uploading import save_with_limit
 from .evaluations import leased_run
 
 evidence_bp = Blueprint("evaluation_evidence", __name__)
-MAX_FILE = 5 * 1024 * 1024
+MAX_FILE = 25 * 1024 * 1024
 
 
 @evidence_bp.post("/evaluation-worker/runs/<run_id>/evidence")

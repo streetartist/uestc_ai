@@ -69,7 +69,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         REDIS_URL=os.environ.get("REDIS_URL", ""),
         REDIS_CACHE_PREFIX=os.environ.get("REDIS_CACHE_PREFIX", "uestc-ai:public:v1"),
         REDIS_CACHE_TTL=int(os.environ.get("REDIS_CACHE_TTL", "30")),
-        MAX_CONTENT_LENGTH=25 * 1024 * 1024,
+        # 25 MB evaluation evidence files plus multipart framing must fit.
+        MAX_CONTENT_LENGTH=26 * 1024 * 1024,
         MARKDOWN_ASSET_MAX_SIZE=8 * 1024 * 1024,
         SUBMISSION_ASSET_MAX_SIZE=20 * 1024 * 1024,
         SECRET_KEY=os.environ.get("SECRET_KEY", "dev-change-me"),
@@ -172,7 +173,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.errorhandler(413)
     def too_large(_error):
-        return jsonify({"error": "payload exceeds 25 MB"}), 413
+        return jsonify({"error": "payload exceeds 26 MB"}), 413
 
     with app.app_context():
         from . import judge_models  # Register organizer pool metadata before schema creation.

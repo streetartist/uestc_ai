@@ -99,5 +99,21 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(self.worker.post(upload, headers=headers, data={'name': 'scene-1-trajectory.json', 'file': (io.BytesIO(contents), 'x.json')}).status_code, 403)
         self.assertEqual(self.member.get(self.budget_url).get_json()['used_runs'], 1)
 
+    def test_evidence_files_up_to_25_mb_are_accepted(self):
+        self.prepare()
+        self.start(self.stage())
+        job = self.claim()
+        upload = f"/api/evaluation-worker/runs/{job['id']}/evidence"
+        headers = {'X-Evaluation-Lease': job['lease_token']}
+        gif = b'GIF89a' + (16).to_bytes(2, 'little') * 2
+        accepted = gif + b'\0' * (25 * 1024 * 1024 - len(gif))
+        response = self.worker.post(upload, headers=headers, data={
+            'name': 'scene-1-replay.gif', 'file': (io.BytesIO(accepted), 'replay.gif')})
+        self.assertEqual(response.status_code, 201, response.get_json())
+        self.assertEqual(response.get_json()['size'], len(accepted))
+        rejected = self.worker.post(upload, headers=headers, data={
+            'name': 'scene-1-replay.gif', 'file': (io.BytesIO(accepted + b'\0'), 'replay.gif')})
+        self.assertEqual(rejected.status_code, 400)
+
 
 if __name__ == '__main__': unittest.main()
