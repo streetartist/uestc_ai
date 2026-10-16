@@ -35,6 +35,20 @@ class DepthImageBundleTests(unittest.TestCase):
                     else:
                         self.assertEqual(len(json.loads(archive.read("practice-scenes.json"))), 3)
                         self.assertIn("practice.py", archive.namelist())
+                        config = json.loads(archive.read("config.json"))
+                        self.assertNotIn("memory", config)
+                        self.assertIn("允许的模型名称", config["model"])
+                        explanation = archive.read("CONFIG.md").decode()
+                        self.assertIn("/api-platform", explanation)
+                        self.assertIn('memory: "same-test-only"', explanation)
+                        self.assertIn("平台不读取或校验它", explanation)
+                        # Compare contents rather than ZIP timestamps, so the
+                        # downloadable artifact cannot lag behind its sources.
+                        published = Path(__file__).resolve().parents[1] / "public/downloads" / package.name
+                        with zipfile.ZipFile(published) as current:
+                            self.assertEqual(set(current.namelist()), set(archive.namelist()))
+                            for name in archive.namelist():
+                                self.assertEqual(current.read(name), archive.read(name), (package.name, name))
 
     def test_bundle_contains_tools_and_public_metadata_without_runtime_secrets(self):
         with tempfile.TemporaryDirectory() as directory:

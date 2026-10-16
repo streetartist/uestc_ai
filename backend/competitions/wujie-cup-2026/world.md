@@ -39,7 +39,7 @@ ZIP 根目录含 `agent.py`、`config.json`，定义 `Agent`。必需 `act(obser
 
 选手程序使用 Python3.11、NumPy、Pillow、requests 和标准库。纯 Python 模块可随 ZIP 提交，额外依赖须提前登记运行镜像。`/tmp` 和同一进程状态可在本次测试内保留，reset 时自行清理或更新；测试结束后删除，不跨测试保存。
 
-模型调用使用 `model_api.py`：`ModelClient(model="资源面板中的允许模型").chat(text, images=[jpeg_base64])`。测评注入 `EVALUATION_API_URL`、`EVALUATION_API_TOKEN`，请求头为 `X-Evaluation-API-Token`；允许模型见题目资源面板。300次调用由全部场景共享，同时受本队本题总额度约束。禁止包内放密钥或绕过代理联网；渠道未配置时不放行正式自测。
+在网站顶部进入「API 平台」(`/api-platform`)，找到本队本题的 API 额度与允许模型名称。模型调用使用 `model_api.py`：`ModelClient(model="从 API 平台复制的允许模型名称").chat(text, images=[jpeg_base64])`。测评注入 `EVALUATION_API_URL`、`EVALUATION_API_TOKEN`，请求头为 `X-Evaluation-API-Token`。300次调用由全部场景共享，同时受本队本题总额度约束。禁止包内放密钥或绕过代理联网；渠道未配置时不放行正式自测。开发包 `CONFIG.md` 说明了 `model` 的填写方法与记忆存活范围；旧版 `memory: "same-test-only"` 仅是选手自定义元信息，平台不解释该字段，也不改变 RAM 限额。
 
 ## 提交与运行限制
 

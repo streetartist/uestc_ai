@@ -29,6 +29,7 @@ export function QuotaCard({ grant }: { grant: AIGrant }) {
   return <article className="ai-quota-card"><div className="ai-card-heading"><div><small>{grant.competition_name}</small><h3>{grant.team_name}</h3></div><span className={`ai-badge ${grant.enabled ? "ok" : "off"}`}>{grant.enabled ? "可使用" : "已停用"}</span></div>
     <p className="ai-grant-scope">{grant.problem_title ?? "队伍通用额度"}</p>
     {([{ label: "Token 配额", used: grant.tokens_used, max: grant.max_tokens }, { label: "调用次数", used: grant.calls_used, max: grant.max_calls }]).map(item => <div className="ai-quota-meter" key={item.label}><div><span>{item.label}</span><strong>{number(item.used)} <small>/ {number(item.max)}</small></strong></div><progress value={Math.min(item.used, item.max)} max={item.max || 1} /></div>)}
+    <div className="ai-tags" aria-label="允许模型">{grant.allowed_models.map(model => <span key={model}>{model}</span>)}</div>
     <div className="ai-card-foot"><span>{grant.allowed_models.length} 个授权模型</span><span>{grant.problem_id ? "本题独立额度" : "队伍共享额度"}</span></div>
   </article>;
 }

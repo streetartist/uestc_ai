@@ -294,9 +294,17 @@ class ComputeResourcesTest(unittest.TestCase):
         self.start()
         other = self.other.get("/api/compute/overview").json["grants"][0]
         self.assertEqual((other["max_gpu_seconds"], other["gpu_seconds_used"]), (7200, 0))
-        team = self.other.post("/api/teams", json={"competition_id": "comp", "name": "future"})
+        # A future team needs a new participant: existing members already
+        # belong to a team in this competition and cannot create another.
+        with self.app.app_context():
+            db.session.add(User(id="future-user", email="future@example.com", name="future", password_hash="unused", role="member"))
+            db.session.add(Session(token_hash=hash_token("future-user"), user_id="future-user", expires_at=utcnow() + timedelta(days=1)))
+            db.session.commit()
+        future_client = self.app.test_client()
+        future_client.set_cookie("session_token", "future-user")
+        team = future_client.post("/api/teams", json={"competition_id": "comp", "name": "future"})
         self.assertEqual(team.status_code, 201, team.json)
-        grants = self.other.get("/api/compute/overview").json["grants"]
+        grants = future_client.get("/api/compute/overview").json["grants"]
         future = next(g for g in grants if g["team_id"] == team.json["id"])
         self.assertEqual((future["max_gpu_seconds"], future["max_cost_millis"]), (7200, 4000))
         self.save_quota({**self.config, "max_gpu_seconds": 9000})

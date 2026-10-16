@@ -85,7 +85,7 @@ class ModelClient:
                                       request_id=_request_id(error.headers))
             error.close()
             self._fail("http_error", f"模型调用失败 HTTP {error.code}；检查额度、允许模型和参数。"
-                       f"本次 max_output_tokens={self.max_output_tokens}，须在题目资源面板的单次输出上限内。")
+                       f"本次 max_output_tokens={self.max_output_tokens}，须在 API 平台本队本题额度的单次输出上限内。")
         except (urllib.error.URLError, OSError, TimeoutError):
             self._fail("transport_error", "模型请求连接失败或超时；核对网络与平台请求记录后再决定是否重试。")
         # A request can be billed even if its response is empty or interrupted.

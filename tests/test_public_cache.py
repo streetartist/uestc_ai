@@ -105,14 +105,14 @@ class PublicCacheTests(unittest.TestCase):
         self.assertTrue(response.json)
 
     def test_public_member_name_changes_invalidate_cache(self):
-        self.member.get('/api/works')
-        self.assertEqual(self.member.get('/api/works').headers.get('X-Cache'), 'HIT')
+        self.member.get('/api/content')
+        self.assertEqual(self.member.get('/api/content').headers.get('X-Cache'), 'HIT')
         with self.app.app_context():
             user = User.query.filter_by(email='admin@uestcai.top').one()
             user.name = 'Updated public member name'
             db.session.flush()
             db.session.commit()
-        self.assertEqual(self.member.get('/api/works').headers.get('X-Cache'), 'MISS')
+        self.assertEqual(self.member.get('/api/content').headers.get('X-Cache'), 'MISS')
 
 
 if __name__ == '__main__': unittest.main()

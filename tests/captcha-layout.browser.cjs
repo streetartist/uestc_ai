@@ -1,4 +1,5 @@
 /* Real browser geometry regression; all authentication POSTs are mocked. */
+/* eslint-disable @typescript-eslint/no-require-imports -- Standalone CommonJS CLI with an optional external Playwright module. */
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
@@ -46,7 +47,7 @@ async function geometry(page) {
     page.on('pageerror',error=>report.pageErrors.push(error.message));
     await page.goto(base+'/login?mode='+mode,{waitUntil:'domcontentloaded',timeout:60000});
     await page.waitForFunction(()=>window.__VINEXT_HYDRATED_AT && !document.querySelector('.account-loading'));
-    await page.getByLabel('邮箱',{exact:true}).fill('layout-test@std.uestc.edu.cn');
+    await page.getByLabel('邮箱',{exact:true}).fill('2026000000001@std.uestc.edu.cn');
     await page.locator('.captcha-image').scrollIntoViewIfNeeded();
     await page.waitForTimeout(150);
     const initial=await geometry(page);
@@ -68,11 +69,18 @@ async function geometry(page) {
     await page.getByLabel('数字验证码',{exact:true}).fill('123456');
     const send=page.getByRole('button',{name:'发送邮件验证码',exact:true});
     assert.equal(await send.isEnabled(),true);
+    const captcha=page.getByAltText('6 位数字验证码，点击更换');
+    const captchaSource=await captcha.getAttribute('src');
     await send.click();
     await page.waitForTimeout(100);
     await capture('mail-loading');
     await page.getByRole('button',{name:/秒后重发/}).waitFor();
     await capture('mail-sent');
+    assert.equal(await captcha.isVisible(),true);
+    assert.equal(await captcha.getAttribute('src'),captchaSource);
+    assert.equal(await page.getByLabel('数字验证码',{exact:true}).inputValue(),'123456');
+    assert.equal(await page.getByLabel('数字验证码',{exact:true}).isDisabled(),true);
+    assert.equal(await page.getByLabel('邮箱验证码',{exact:true}).isEnabled(),true);
     const maxDelta=Math.max(...states.map(s=>s.maxDelta));
     const filename=path.basename(output,'.json')+'-'+mode+'-'+width+'.png';
     await page.screenshot({path:path.join(path.dirname(output),filename),fullPage:true});

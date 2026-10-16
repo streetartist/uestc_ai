@@ -62,14 +62,14 @@ class IndependentTrialTests(unittest.TestCase):
         url = f"/api/works/{run['submission_id']}"
         self.assertEqual(self.member.get(url).get_json()["evaluation"]["metrics"], {"task_success": 75})
         self.assertEqual(self.reviewer.get(url).get_json()["evaluation"]["metrics"], {"task_success": 75})
-        self.assertIsNone(self.app.test_client().get(url).get_json()["evaluation"])
+        self.assertEqual(self.app.test_client().get(url).status_code, 404)
         self.assertEqual(self.reviewer.get(f"/api/evaluation-runs/{run['id']}").status_code, 200)
         # Other members cannot see either private history or the selected metrics.
         other = self.app.test_client()
         self.register(other, "peer@std.uestc.edu.cn", "Peer")
         history = f"/api/problems/{self.problem['id']}/evaluation-runs?team_id={self.team['id']}"
         self.assertEqual(other.get(history).status_code, 403)
-        self.assertIsNone(other.get(url).get_json()["evaluation"])
+        self.assertEqual(other.get(url).status_code, 404)
         self.assertEqual(other.get(f"/api/evaluation-runs/{run['id']}").status_code, 403)
         # Re-submit the same package/result after exhausting the quota.
         resubmitted = self.formal(self.stage(), run["id"])

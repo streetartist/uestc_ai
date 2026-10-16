@@ -13,6 +13,7 @@ from ..evaluation import adapters
 from ..evaluation_trials import can_view_result, selected_result_error
 from ..ai_quotas import lock_problem
 from ..submission_schema import validate_submission_materials
+from ..submission_access import can_view_submission
 from ..reviewing import calculate_review_total, combined_score, effective_reviewer_weights, external_weight_percent, is_review_locked, latest_external_score, review_score
 from ..security import current_user, require_user, team_member
 from ..uploading import file_extension, original_filename, save_with_limit
@@ -271,7 +272,7 @@ def submit_work():
         db.session.add(submission)
         db.session.flush()
     version, removed_storage_names = overwrite_version(submission, data, user.id)
-    visibility = "private" if status == "draft" else "public"
+    visibility = "private" if status == "draft" else "reviewers"
     upload_folder = Path(current_app.config["UPLOAD_FOLDER"])
     if any(not (upload_folder / asset.storage_name).is_file() for asset in retained):
         db.session.rollback()
@@ -341,7 +342,11 @@ def public_work_archive():
         query = query.filter(Problem.slug == request.args["problem"])
     submissions = query.order_by(Submission.updated_at.desc()).all()
     versions = [current_version(submission) for submission in submissions]
-    return jsonify([public_work_payload(version, include_content=False) for version in versions if version and version.status in PUBLIC_VERSION_STATUSES])
+    response = jsonify([public_work_payload(version, include_content=False) for version in versions
+                        if version and version.status in PUBLIC_VERSION_STATUSES
+                        and can_view_submission(version.submission, version)])
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 @submissions_bp.get("/works/<submission_id>")
@@ -352,7 +357,11 @@ def public_work(submission_id: str):
     version = current_version(submission)
     if not version or version.status not in PUBLIC_VERSION_STATUSES:
         return jsonify({"error": "work has no public version"}), 404
-    return jsonify(public_work_payload(version))
+    if not can_view_submission(submission, version):
+        return jsonify({"error": "work not found"}), 404
+    response = jsonify(public_work_payload(version))
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 @submissions_bp.get("/me/submissions")
@@ -475,7 +484,7 @@ def upload_asset(version_id: str):
         size = save_with_limit(file.stream, target, size_limit)
     except ValueError:
         return jsonify({"error": "submission asset exceeds size limit", "limit": size_limit}), 413
-    visibility = "public" if version.status in PUBLIC_VERSION_STATUSES else "private"
+    visibility = "reviewers" if version.status in PUBLIC_VERSION_STATUSES else "private"
     Review.query.filter_by(submission_version_id=version.id).delete(synchronize_session=False)
     Score.query.filter_by(submission_version_id=version.id).delete(synchronize_session=False)
     asset = SubmissionAsset(id=asset_id, version=version, original_name=display_name, storage_name=storage_name, content_type=file.mimetype or "application/octet-stream", size=size, visibility=visibility)
@@ -491,12 +500,12 @@ def download_asset(asset_id: str):
     asset = db.session.get(SubmissionAsset, asset_id)
     if not asset:
         return jsonify({"error": "asset not found"}), 404
-    user = current_user()
-    if asset.version.status not in PUBLIC_VERSION_STATUSES:
-        allowed = user and (can_manage(asset.version.submission, user.id) or user.role in {"admin", "organizer"})
-        if not allowed:
-            return jsonify({"error": "asset not found"}), 404
-    return send_from_directory(current_app.config["UPLOAD_FOLDER"], asset.storage_name, as_attachment=True, download_name=asset.original_name)
+    # Check the current viewer even for legacy rows marked "public".
+    if not can_view_submission(asset.version.submission, asset.version):
+        return jsonify({"error": "asset not found"}), 404
+    response = send_from_directory(current_app.config["UPLOAD_FOLDER"], asset.storage_name, as_attachment=True, download_name=asset.original_name)
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 @submissions_bp.post("/reviews")

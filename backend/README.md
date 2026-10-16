@@ -64,11 +64,13 @@ python -m flask --app backend/app.py db upgrade
 
 ## 邮件与注册
 
-校内邮箱可以请求验证码注册，校外邮箱需要管理员生成的一次性邀请。没有配置 `RESEND_API_KEY` 时邮件不会发送；只有测试或明确设置 `EXPOSE_VERIFICATION_CODE=1` 的本地环境才会在响应中返回验证码。
+注册免邀请码的邮箱格式为 `13 位数字学号@std.uestc.edu.cn`；邮箱别名、其他格式及校外邮箱均需管理员生成的一次性邀请。请求邮件验证码和创建账号两步均检查该规则；既有账号的登录和密码找回不受影响。没有配置 `RESEND_API_KEY` 时邮件不会发送；只有测试或明确设置 `EXPOSE_VERIFICATION_CODE=1` 的本地环境才会在响应中返回验证码。
 
 ## 上传与评分
 
 Markdown 编辑器的单个资源默认限制为 8 MB，作品附件默认限制为 20 MB。后端会校验文件类型和大小，但生产部署仍应增加恶意文件扫描、对象存储权限和保留策略。
+
+`/api/works`、作品详情、个人主页内的参赛作品和附件下载统一校验查看权限：本队成员、管理员和组织者可查看；评委须已被分配到该赛事，且只能查看当前正式提交。其他队伍、未分配评委和匿名访客不能读取材料。旧附件即使仍标为 `public` 也必须通过同一检查；这些接口不使用匿名 Redis 缓存，返回 `private, no-store`。审核通过的社区投稿仍可公开访问。
 
 外部评测方可以调用 `POST /api/scores/import`。CSV 接口为 `POST /api/scores/import-csv`，multipart 字段包括 `competition_id`、`problem_id`、`source`、`label` 和 `file`。CSV 必填列为 `submission_version_id,total_score`，可选列为 `metric_<name>` 与 `feedback_md`。
 

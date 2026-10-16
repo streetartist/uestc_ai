@@ -39,10 +39,14 @@
 .public-shell .update-visual .article-cover,.public-shell .update-visual .club-track-visual { width:100%; height:100%; min-height:280px; }
 .public-shell .update-featured-visual .article-cover img { object-fit:contain; padding:22px; background:linear-gradient(115deg,#e5ecd8,#f2f1e5); }
 .public-shell .update-featured-info strong { font-weight:750; }
-.public-shell .update-featured-info { background:#fff; }
+.public-shell:has(.home-updates) .news-showcase .update-featured-info { background:var(--paper-2); padding:24px; }
 .public-shell .update-visual .article-cover.cover-icon { min-height:100%; background:radial-gradient(circle at 78% 22%,#dce8d5,#eef3e8 48%,#e6eee0); color:#1f5440; }
 .public-shell .update-visual .article-cover.cover-icon svg { width:72px; height:72px; }
-.public-shell .update-featured { border:1px solid #e1e7df; border-radius:10px; overflow:hidden; }
+.public-shell:has(.home-updates) .news-showcase .update-featured { border:1px solid var(--line) !important; border-radius:10px; overflow:hidden; background:var(--paper-2); }
+.public-shell:has(.home-updates) .news-showcase .update-featured:is(:hover,:focus-visible) { background:var(--paper-2); }
+.public-shell:has(.home-updates) .news-showcase .update-featured-info > strong { display:block; margin-top:14px; }
+.public-shell:has(.home-updates) .news-showcase .update-featured .update-visual,
+.public-shell:has(.home-updates) .news-showcase .update-featured:is(:hover,:focus-visible) .update-visual { border-radius:0; }
 .public-shell .home-manifesto .manifesto-card > span { display:flex; align-items:center; gap:12px; color:#496650; }
 .public-shell .home-manifesto .manifesto-card > span svg { position:static; }
 .public-shell .home-manifesto .manifesto-card strong { font-weight:750; }
@@ -81,9 +85,9 @@
 .public-shell .competition-overview:has(.competition-poster) { display:grid; grid-template-columns:minmax(220px,330px) minmax(0,1fr); column-gap:50px; align-items:start; background:#fff; padding:32px; border:1px solid #e0e7df; border-radius:10px; }
 .competition-overview > .competition-poster { grid-column:1; grid-row:1 / 3; }
 .competition-overview:has(.competition-poster) > div,.competition-overview:has(.competition-poster) > dl { grid-column:2; }
-.public-shell .track-directory { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:22px; }
+.public-shell .track-directory { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr)); gap:22px; }
 .public-shell .track-directory .track-entry { display:flex; flex-direction:column; align-items:stretch; background:white; padding:0 0 22px; gap:13px; border:1px solid var(--line); border-radius:8px; overflow:hidden; position:relative; }
-.track-directory .club-track-visual { height:190px; }
+.track-directory .club-track-visual { height:190px; min-height:190px; flex-shrink:0; width:100%; }
 .public-shell .track-directory .track-entry > :not(.club-track-visual) { margin-left:22px; margin-right:22px; }
 .public-shell .track-directory .track-number { display:none; }
 .public-shell .track-directory h3 { color:var(--ink); font-weight:750; }

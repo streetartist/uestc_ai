@@ -30,7 +30,7 @@ ZIP 根目录含 `agent.py`、`config.json`。定义 `Agent.act(observation)`，
 
 每次 act 返回原生七维浮点列表 `[dx,dy,dz,rx,ry,rz,g]`，各项有限且在[-1,1]，g=1关闭夹爪，g=-1打开。一次对应一个控制步；非法动作执行安全空动作并计数。开发包的 Policy 可替换为学习策略、视觉策略或 harness，不沿用旧积木环境的 `{target,gripper,repeat}` 动作。
 
-模型使用 `model_api.py`，测评注入 `EVALUATION_API_URL`、`EVALUATION_API_TOKEN`，请求头 `X-Evaluation-API-Token`；允许模型见资源面板。最多300次调用由全部任务共享。环境与选手程序处于独立容器，私有场景和结果目录不挂载给选手。
+模型使用 `model_api.py`。从网站顶部进入「API 平台」(`/api-platform`)，在本队本题的 API 额度中查看允许模型名称，并填写开发包 `config.json` 的 `model`。测评注入 `EVALUATION_API_URL`、`EVALUATION_API_TOKEN`，请求头 `X-Evaluation-API-Token`。最多300次调用由全部任务共享。`CONFIG.md` 解释模型接入与记忆存活范围；旧版 `memory` 字段只供选手代码自行解释，不会自动启用记忆，也不改变 RAM 限额。环境与选手程序处于独立容器，私有场景和结果目录不挂载给选手。
 
 ## 提交与运行限制
 

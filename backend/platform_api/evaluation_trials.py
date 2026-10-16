@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .evaluation import fixed_evaluation_rules
 from .security import current_user, team_member
+from .submission_access import can_view_submission
 
 
 def package_digest(path: Path) -> str:
@@ -22,7 +23,7 @@ def can_view_result(run) -> bool:
         return True
     # Reviewers see only the result selected in a current formal submission.
     version = run.submission_version
-    return user.role == "reviewer" and version.status in {"submitted", "confirmed", "published"} and (
+    return user.role == "reviewer" and can_view_submission(submission, version) and (
         (version.snapshot or {}).get("evaluation_run_id") == run.id or run.purpose == "submission"
     )
 

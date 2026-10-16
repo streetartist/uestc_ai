@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import secrets
 import sys
 import tempfile
 import unittest
@@ -17,7 +18,9 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from platform_api import create_app  # noqa: E402
 from platform_api.extensions import db  # noqa: E402
-from platform_api.models import AuditLog, Competition, Content, Session, User  # noqa: E402
+from platform_api.models import AuditLog, Competition, Content, RegistrationInvite, Session, User  # noqa: E402
+from platform_api.security import hash_token
+from platform_api.routes.auth import is_campus_email
 from platform_api.seed import replace_demo_data  # noqa: E402
 
 
@@ -58,6 +61,16 @@ class PlatformApiTestCase(unittest.TestCase):
         return client.post("/api/auth/verification-codes", json={"email": email, "captcha_id": challenge["id"], "captcha_code": challenge["debug_code"], **extra})
 
     def register(self, client, email, name, password="secure-pass-123", invite_code=None):
+        # Existing fixtures use named aliases; provision explicit organizer
+        # invitations rather than weakening the production student-email rule.
+        if not invite_code and not is_campus_email(email):
+            invite_code = secrets.token_hex(6).upper()
+            with self.app.app_context():
+                admin = User.query.filter_by(role="admin").first()
+                db.session.add(RegistrationInvite(code_hash=hash_token(invite_code), code_prefix=invite_code[:8],
+                    note="Approved test fixture alias", created_by=admin.id,
+                    expires_at=datetime.now(timezone.utc)+timedelta(days=1)))
+                db.session.commit()
         verification_payload = {"email": email}
         if invite_code:
             verification_payload["invite_code"] = invite_code
@@ -220,7 +233,7 @@ class PlatformApiTestCase(unittest.TestCase):
 
     def test_email_verification_and_external_registration_invites(self):
         campus_client = self.app.test_client()
-        campus_email = "verified-student@std.uestc.edu.cn"
+        campus_email = "2025120903001@std.uestc.edu.cn"
         verification = self.code_request(campus_client, campus_email)
         self.assertEqual(verification.status_code, 202, verification.get_json())
         verification_code = verification.get_json()["debug_code"]
@@ -244,7 +257,7 @@ class PlatformApiTestCase(unittest.TestCase):
         self.assertTrue(registered.get_json()["user"]["email_verified"])
 
         rate_client = self.app.test_client()
-        rate_email = "rate-limit@std.uestc.edu.cn"
+        rate_email = "2025120903002@std.uestc.edu.cn"
         first = self.code_request(rate_client, rate_email)
         second = self.code_request(rate_client, rate_email)
         self.assertEqual(first.status_code, 202, first.get_json())
@@ -386,8 +399,7 @@ class PlatformApiTestCase(unittest.TestCase):
         self.assertEqual(next(item for item in queue if item["id"] == version_id)["evaluation"]["metrics"], {"task_success": 50, "deaths": 1})
         self.assertEqual(self.reviewer.post("/api/reviews", json=review_payload).status_code, 201)
         public_result = self.app.test_client().get(f"/api/works/{submitted.get_json()['id']}")
-        self.assertEqual(public_result.status_code, 200)
-        self.assertIsNone(public_result.get_json()["evaluation"])
+        self.assertEqual(public_result.status_code, 404)
         self.assertEqual(public["evaluation"]["metrics"], {"task_success": 50, "deaths": 1})
         with self.app.app_context():
             from platform_api.models import Score, ScoreBatch

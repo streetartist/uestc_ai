@@ -40,8 +40,18 @@ def build(output=None):
                     archive.write(SOURCE / "libero" / name, name)
                 archive.writestr("BASELINE.md", "接口示例agent.py可立即练习，不代表任务求解。另提供纯CPU最近邻模仿学习基线：\n\n1. 按LIBERO官方数据说明取得三个已公布任务的公开演示HDF5，不使用测试初始状态生成训练数据。\n2. 训练侧安装h5py，运行 `python train_policy.py --demo task_demo.hdf5 --output task-policy.npz`。每任务单独训练，默认最多2048样本。\n3. 将nearest_neighbor_agent.py改名为agent.py；config.json的policy_files将三个task_name分别映射到对应NPZ。\n4. 将agent.py、config.json、policy_features.py和三个NPZ打包，运行practice.py，再按20MB限制上传。\n\n该基线仅是可优化的轻量策略入口，未提供预训练权重和成功率承诺。可改为BC网络、策略模型或自定义harness。训练与测试动作均为原生七维动作，图像上下方向须一致。\n")
                 archive.writestr("INSTALL.md", "Python3.11虚拟环境中安装：\n\n```bash\npip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu\npip install robosuite==1.4.0 mujoco==2.3.7 numpy==1.26.4 Pillow==11.3.0 bddl==1.0.1 future==1.0.0 matplotlib==3.8.4 cloudpickle==3.1.1 gym==0.25.2 easydict==1.13 pyyaml==6.0.2 opencv-python-headless==4.10.0.84 termcolor==2.4.0 requests==2.32.5\ngit clone https://github.com/Lifelong-Robot-Learning/LIBERO.git\ncd LIBERO\ngit checkout 8f1084e3132a39270c3a13ebe37270a43ece2a01\npip install --no-deps -e .\ncd ..\n```\n\n保留完整克隆目录中的assets/bddl_files/init_files。首次导入按提示建立LIBERO路径配置，演示数据并非运行环境必须项。Linux软件渲染需安装libosmesa6并设置MUJOCO_GL=osmesa、PYOPENGL_PLATFORM=osmesa。也可直接在解压目录构建Dockerfile.environment，它已包含资源和路径配置。\n")
-            archive.writestr("config.json", json.dumps({"model": "填写题目资源面板的允许模型名称", "memory": "same-test-only"}, ensure_ascii=False))
-            archive.writestr("README.md", (ROOT / f"backend/competitions/wujie-cup-2026/{'world' if kind == 'world' else 'arm'}.md").read_text(encoding="utf-8") + "\n\n## 开发包使用\n\n将agent.py和config.json打包为agent.zip；practice.py和练习配置留在本地。LIBERO可在解压目录 `docker build -f Dockerfile.environment -t wujie-libero-practice .`，然后 `docker run --rm -v \"$PWD:/workspace\" wujie-libero-practice --package agent.zip --scenes practice-scenes.json --output practice-output`。需要模型时，从model_api导入ModelClient，调用chat(text, images=[画面base64])；开发时配置UESTC_MODEL_API_KEY，测评凭据自动注入。429或其他错误不自动重试，请在harness中处理。练习文件不改变私有测试场景。\n")
+            archive.writestr("config.json", json.dumps({"model": "填写 API 平台 → 本队本题额度中允许的模型名称"}, ensure_ascii=False))
+            archive.writestr("CONFIG.md", """# config.json 与模型接入
+
+在网站顶部进入「API 平台」(`/api-platform`)，找到本队、当前题目的 API 额度，复制其中允许使用的模型名称，填写 `model`。必须使用模型名称，不是渠道名称或上游内部编号。看不到本题额度时，先确认队伍已报名，并联系组织方开通；不要猜测模型名。
+
+`config.json` 由平台原样传入选手的 `Agent.configure(config)`。`model` 供你自己的策略读取；内置移动/空动作示例不调用模型，单独修改该字段不会自动启用大模型。使用模型时随包提交 `model_api.py`，调用 `ModelClient(model=config["model"]).chat(...)`。开发时的 API Key 在「API 平台」创建，通过环境变量 `UESTC_MODEL_API_KEY` 设置；测评时短期凭据由平台注入，均不要写进 ZIP。
+
+旧版示例中的 `memory: "same-test-only"` 已从默认配置中移除。它只是给选手 harness 的可选元信息，不是平台支持的枚举、内存额度开关或自动记忆功能；平台不读取或校验它。若你自己的代码读取该字段，其可用取值和行为由你的代码定义。保留旧字段不影响提交。
+
+实际存活范围：同一次测试的 Agent 进程状态和 `/tmp` 可在三个场景之间保留，场景开始时调用 `reset(goal)`，由选手自行清理或更新记忆；不同场景的环境背包不共享。测试结束后容器销毁，不能跨测试保存文件或记忆。程序 RAM 上限由题目的运行配置决定，不能通过 config.json 更改。
+""")
+            archive.writestr("README.md", (ROOT / f"backend/competitions/wujie-cup-2026/{'world' if kind == 'world' else 'arm'}.md").read_text(encoding="utf-8") + "\n\n## 开发包使用\n\n模型名称、API 密钥取得方式及记忆存活范围见 [CONFIG.md](CONFIG.md)。将agent.py和config.json打包为agent.zip；practice.py和练习配置留在本地。LIBERO可在解压目录 `docker build -f Dockerfile.environment -t wujie-libero-practice .`，然后 `docker run --rm -v \"$PWD:/workspace\" wujie-libero-practice --package agent.zip --scenes practice-scenes.json --output practice-output`。需要模型时，从model_api导入ModelClient，调用chat(text, images=[画面base64])；开发时配置UESTC_MODEL_API_KEY，测评凭据自动注入。429或其他错误不自动重试，请在harness中处理。练习文件不改变私有测试场景。\n")
             scenes = minecraft_scenes() if kind == "world" else libero_scenes()
             archive.writestr("practice-scenes.json", json.dumps(scenes, ensure_ascii=False))
     return [classification, *(output / f"wujie-{kind}-starter.zip" for kind in entries)]

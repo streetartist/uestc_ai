@@ -39,7 +39,7 @@ export default function CompetitionPage() {
             <header className="section-header"><div><span className="eyebrow"><i />TRACKS</span><h2>选择赛道</h2></div><span className="section-note">先进入赛道，再选择具体题目</span></header>
             <div className="track-directory">
               {(data.tracks ?? []).map((track, index) => (
-                <Link key={track.id} href={`/competitions/${data.slug}/tracks/${track.slug}`}>
+                <Link className="track-entry" key={track.id} href={`/competitions/${data.slug}/tracks/${track.slug}`}>
                   <TrackVisual value={`${track.name} ${track.slug}`} />
                   <span className="track-number">{String(index + 1).padStart(2, "0")}</span>
                   <div><small>{track.config?.short ?? "TRACK"}</small><h3>{track.name}</h3><p>{track.description}</p></div>

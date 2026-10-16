@@ -12,9 +12,7 @@ from sqlalchemy.orm import Session
 PUBLIC_ENDPOINTS = {
     'competitions.list_competitions', 'competitions.competition_detail',
     'competitions.track_detail', 'competitions.list_problems', 'competitions.problem_detail',
-    'content.list_content', 'content.content_detail', 'submissions.public_work_archive',
-    'submissions.public_work', 'submissions.leaderboard',
-    'profiles.profile',
+    'content.list_content', 'content.content_detail', 'submissions.leaderboard',
 }
 PUBLIC_MODELS = {
     'User', 'Team', 'TeamMember', 'Registration', 'SubmissionAsset',
