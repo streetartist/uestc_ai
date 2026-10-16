@@ -66,7 +66,7 @@ export function AppShell({ children, title, eyebrow, actions, contained = true, 
         ? [{ href: "/manage/reviews", label: "评审管理", icon: Users }]
         : []),
     ...(user && ["organizer", "admin"].includes(user.role)
-      ? [{ href: "/manage/scores", label: "外部评分", icon: Scale }]
+      ? [{ href: "/manage/scores", label: "外部评分", icon: Scale }, { href: "/manage/works", label: "作品展示", icon: PenLine }]
       : []),
     ...(user?.role === "admin"
       ? [{ href: "/admin/users", label: "系统管理", icon: UserRound }]

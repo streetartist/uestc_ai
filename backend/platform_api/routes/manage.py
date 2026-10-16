@@ -33,6 +33,7 @@ from ..reviewing import REVIEWER_ROLES, calculate_effective_weights, combined_sc
 from ..evaluation import validate_evaluation_config
 from ..problem_templates import templates
 from ..submission_schema import validate_submission_schema
+from ..submission_access import FORMAL_STATUSES, competition_ended
 from ..security import current_user, hash_token, require_user
 from ..utils import audit
 
@@ -398,6 +399,8 @@ def managed_submissions():
     versions = query.order_by(SubmissionVersion.created_at.desc()).all()
     return jsonify([{
         **version.submission.to_dict(),
+        "publication": version.submission.publication or {},
+        "competition_ended": competition_ended(version.submission.problem.track.competition),
         "version_id": version.id,
         "version_number": version.version,
         "version_status": version.status,
@@ -411,6 +414,56 @@ def managed_submissions():
         "latest_version_id": version.id,
         "updated_at": version.created_at.isoformat(),
     } for version in versions])
+
+
+@manage_bp.route("/manage/submissions/<submission_id>/publication", methods=["GET", "PATCH"])
+@require_user("admin", "organizer")
+def work_publication(submission_id):
+    submission = db.session.get(Submission, submission_id, with_for_update=request.method == "PATCH")
+    if not submission:
+        return jsonify({"error": "submission not found"}), 404
+    version = submission.versions[-1] if submission.versions else None
+    if not version:
+        return jsonify({"error": "submission has no version"}), 409
+    if request.method == "GET":
+        response = jsonify({"version_id": version.id, "version_created_at": version.created_at.isoformat(), "publication": submission.publication or {},
+                            "assets": [asset.to_dict() for asset in version.assets],
+                            "competition_ended": competition_ended(submission.problem.track.competition)})
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or type(data.get("published")) is not bool:
+        return jsonify({"error": "invalid publication settings"}), 400
+    if (data.get("version_id") != version.id
+            or data.get("version_created_at") != version.created_at.isoformat()):
+        return jsonify({"error": "submission changed; refresh before publishing"}), 409
+    if data["published"]:
+        competition = submission.problem.track.competition
+        if not competition_ended(competition):
+            return jsonify({"error": "works can only be published after competition ends"}), 409
+        if (submission.status not in FORMAL_STATUSES or version.status not in FORMAL_STATUSES
+                or competition.status != "published" or submission.problem.status != "published"):
+            return jsonify({"error": "only formal works in published competitions can be showcased"}), 409
+        title, description = data.get("title"), data.get("description_md")
+        asset_ids, metrics_public = data.get("asset_ids", []), data.get("metrics_public", False)
+        if (not isinstance(title, str) or not 1 <= len(title.strip()) <= 180
+                or not isinstance(description, str) or not 1 <= len(description.strip()) <= 200_000
+                or type(metrics_public) is not bool or not isinstance(asset_ids, list)
+                or any(not isinstance(item, str) for item in asset_ids)
+                or len(set(asset_ids)) != len(asset_ids)
+                or not set(asset_ids).issubset({asset.id for asset in version.assets})):
+            return jsonify({"error": "invalid publication settings"}), 400
+        submission.publication = {"published": True, "version_id": version.id, "title": title.strip(),
+                                  "description_md": description.strip(), "asset_ids": asset_ids,
+                                  "metrics_public": metrics_public,
+                                  "published_at": datetime.now(timezone.utc).isoformat()}
+    else:
+        submission.publication = {}
+    audit("submission.publication_updated", "submission", submission.id,
+          {"published": data["published"], "asset_ids": (submission.publication or {}).get("asset_ids", []),
+           "metrics_public": (submission.publication or {}).get("metrics_public", False)})
+    db.session.commit()
+    return jsonify({"publication": submission.publication})
 
 
 @manage_bp.get("/manage/score-batches")
@@ -563,7 +616,7 @@ def users():
     if request.args.get("q"):
         needle = f"%{request.args['q'].strip()}%"
         query = query.filter((User.name.ilike(needle)) | (User.email.ilike(needle)))
-    return jsonify([user.to_dict() for user in query.order_by(User.created_at.desc()).all()])
+    return jsonify([{**user.to_dict(), "student_number": user.student_number} for user in query.order_by(User.created_at.desc()).all()])
 
 
 @manage_bp.get("/admin/registration-invites")

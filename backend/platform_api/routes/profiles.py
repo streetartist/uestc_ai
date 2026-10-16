@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify
 from ..extensions import db
 from ..models import Competition, Content, Registration, Submission, Team, TeamMember, Track, User
 from .submissions import PUBLIC_VERSION_STATUSES, current_version, public_work_payload
-from ..submission_access import can_view_submission
+from ..submission_access import can_view_work
 
 profiles_bp = Blueprint("profiles", __name__)
 
@@ -34,7 +34,7 @@ def profile(user_id):
     works = []
     for submission in submissions:
         version = current_version(submission)
-        if version and version.status in PUBLIC_VERSION_STATUSES and submission.problem.track.competition.status == "published" and submission.problem.status != "draft" and can_view_submission(submission, version):
+        if version and version.status in PUBLIC_VERSION_STATUSES and submission.problem.track.competition.status == "published" and submission.problem.status != "draft" and can_view_work(submission, version):
             works.append(public_work_payload(version, include_content=False))
     contributions = Content.query.filter_by(author_id=user.id, status="published").order_by(Content.published_at.desc()).all()
     # Public identity is deliberately separate from User.to_dict: no email, role or private records.

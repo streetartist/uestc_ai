@@ -4,6 +4,7 @@ export type User = {
   name: string;
   role: "member" | "reviewer" | "editor" | "organizer" | "admin";
   email_verified: boolean;
+  student_number?: string | null;
 };
 
 export type RegistrationInvite = {
@@ -217,7 +218,19 @@ export type Submission = {
   assets?: SubmissionAsset[];
 };
 
+export type WorkPublication = {
+  published?: boolean;
+  version_id?: string;
+  title?: string;
+  description_md?: string;
+  asset_ids?: string[];
+  metrics_public?: boolean;
+  published_at?: string;
+};
+
 export type PublicWork = Submission & {
+  view?: "review" | "public";
+  public_metrics?: { metrics: Record<string, number>; definitions: Array<{ key: string; label: string; unit?: string }> };
   track_name: string;
   track_slug: string;
   competition_name: string;
@@ -319,6 +332,8 @@ export type ReviewerWeightConfiguration = {
 };
 
 export type ManagedSubmission = Submission & {
+  publication?: WorkPublication;
+  competition_ended?: boolean;
   track_id: string;
   track_name: string;
   competition_id: string;

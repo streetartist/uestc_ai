@@ -140,6 +140,12 @@ def register():
         return jsonify({"error": "invalid registration name"}), 400
     if User.query.filter_by(email=email).first():
         return jsonify({"error": "email already registered"}), 409
+    student_number = None
+    if is_campus_email(email):
+        supplied = data.get("student_number")
+        if not isinstance(supplied, str) or not re.fullmatch(r"[0-9]{1,32}", supplied.strip()):
+            return jsonify({"error": "valid student number required"}), 400
+        student_number = supplied.strip()
     invite = None
     if not is_campus_email(email):
         invite = active_invite(data.get("invite_code"))
@@ -164,7 +170,7 @@ def register():
         db.session.commit()
         return jsonify({"error": "invalid verification code"}), 400
 
-    user = User(email=email, name=data["name"].strip(), password_hash=generate_password_hash(data["password"]), role="member", email_verified_at=now)
+    user = User(email=email, name=data["name"].strip(), password_hash=generate_password_hash(data["password"]), role="member", email_verified_at=now, student_number=student_number)
     db.session.add(user)
     db.session.flush()
     verification.consumed_at = now

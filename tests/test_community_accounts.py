@@ -90,7 +90,7 @@ class CommunityAccountsTestCase(unittest.TestCase):
     def test_registration_requires_matching_confirmation(self):
         email = "confirmation@std.uestc.edu.cn"
         code = self.code_request(self.member, email).get_json()["debug_code"]
-        data = {"email": email, "name": "Student", "password": "secure-pass!", "verification_code": code}
+        data = {"email": email, "student_number": "2026123456789", "name": "Student", "password": "secure-pass!", "verification_code": code}
         self.assertEqual(self.member.post("/api/auth/register", json=data).status_code, 400)
         self.assertEqual(self.member.post("/api/auth/register", json={**data, "confirm_password": "different!"}).status_code, 400)
         self.assertEqual(self.member.post("/api/auth/register", json={**data, "confirm_password": data["password"]}).status_code, 201)

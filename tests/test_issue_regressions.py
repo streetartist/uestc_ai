@@ -21,7 +21,7 @@ class OpenIssueRegressions(unittest.TestCase):
     complete = trials.IndependentTrialTests.complete
     formal = trials.IndependentTrialTests.formal
 
-    def test_campus_alias_registration_policy_is_unchanged(self):
+    def test_campus_alias_registration_accepts_separate_student_number(self):
         email = 'new-alias@std.uestc.edu.cn'
         self.assertTrue(is_campus_email(email))
         self.assertEqual(self.register(self.member, email, 'Campus Alias').status_code, 201)

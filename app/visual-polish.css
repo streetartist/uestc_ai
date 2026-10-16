@@ -230,3 +230,11 @@
 .public-shell .wujie-prizes { background:transparent; border:0; padding:0; margin:32px 0; }
 .public-shell .competition-overview:has(.competition-poster) > .competition-poster { grid-row:1; }
 .public-shell .competition-overview:has(.competition-poster) { align-items:center; }
+
+
+/* Explicit post-competition publication controls, including narrow screens. */
+.showcase-form { margin-top: 24px; }
+.showcase-fields { border: 0; padding: 0; margin: 20px 0 0; min-width: 0; display: grid; gap: 18px; }
+.showcase-fields input[type="checkbox"] { width: 18px; min-height: 18px; height: 18px; margin-right: 6px; padding: 0; vertical-align: middle; accent-color: var(--coral); }
+.showcase-fields .button-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.showcase-fields .markdown-body { overflow-wrap: anywhere; }

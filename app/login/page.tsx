@@ -18,6 +18,7 @@ export default function LoginPage() {
   const [mode, setMode] = useState<Mode>(initialMode === "reset" || initialMode === "register" ? initialMode : "login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [studentNumber, setStudentNumber] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [inviteCode, setInviteCode] = useState("");
@@ -25,7 +26,8 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const externalEmail = mode === "register" && email.includes("@") && !email.toLowerCase().endsWith("@std.uestc.edu.cn");
+  const campusEmail = mode === "register" && email.trim().toLowerCase().endsWith("@std.uestc.edu.cn");
+  const externalEmail = mode === "register" && email.includes("@") && !campusEmail;
   function switchMode(next: Mode) { setMode(next); setError(""); setNotice(""); setCode(""); setPassword(""); setConfirmation(""); }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError("");
@@ -33,7 +35,7 @@ export default function LoginPage() {
     if (mode !== "login" && password !== confirmation) { setError("两次输入的密码不一致。"); return; }
     setSubmitting(true);
     try {
-      await api(`/auth/${mode === "reset" ? "reset-password" : mode}`, { method: "POST", ...jsonBody(mode === "login" ? { email, password } : mode === "reset" ? { email, verification_code: code, new_password: password, confirm_password: confirmation } : { email, password, confirm_password: confirmation, name, verification_code: code, invite_code: inviteCode }) });
+      await api(`/auth/${mode === "reset" ? "reset-password" : mode}`, { method: "POST", ...jsonBody(mode === "login" ? { email, password } : mode === "reset" ? { email, verification_code: code, new_password: password, confirm_password: confirmation } : { email, password, confirm_password: confirmation, name, student_number: campusEmail ? studentNumber.trim() : undefined, verification_code: code, invite_code: inviteCode }) });
       if (mode === "reset") { switchMode("login"); setNotice("密码已重置，请使用新密码登录。"); return; }
       await refresh();
       const next = searchParams.get("next");
@@ -42,12 +44,13 @@ export default function LoginPage() {
     finally { setSubmitting(false); }
   }
   return <AppShell title={labels[mode]} eyebrow="ACCOUNT"><div className="auth-layout">
-    <section className="auth-note"><span>平台账户</span><h2>一个账户，连接队伍、作品与个人履历。</h2><p>学生可使用 <strong>@std.uestc.edu.cn</strong> 邮箱注册，其他邮箱需要管理员邀请码。</p><p>忘记密码时，通过注册邮箱验证身份即可重置。</p></section>
+    <section className="auth-note"><span>平台账户</span><h2>一个账户，连接队伍、作品与个人履历。</h2><p>学生可使用 <strong>@std.uestc.edu.cn</strong> 邮箱注册并填写学号，其他邮箱需要管理员邀请码。</p><p>忘记密码时，通过注册邮箱验证身份即可重置。</p></section>
     <form className="form-panel auth-form" onSubmit={submit} noValidate><fieldset className="auth-fields" disabled={submitting}>
       <div className="segmented-control" aria-label="账户操作">{(["login", "register"] as Mode[]).map((item) => <button type="button" className={mode === item ? "selected" : ""} key={item} onClick={() => switchMode(item)}>{item === "login" ? "登录" : "注册"}</button>)}</div>
       {mode === "reset" && <h2>通过邮箱找回密码</h2>}
       {mode === "register" && <label className="form-field"><span>姓名或昵称</span><input value={name} onChange={(event) => setName(event.target.value)} maxLength={80} autoComplete="name" required /></label>}
       <label className="form-field"><span>邮箱</span><input type="email" value={email} onChange={(event) => { setEmail(event.target.value); setCode(""); }} autoComplete="email" maxLength={255} required /></label>
+      {campusEmail && <label className="form-field"><span>学号</span><input aria-label="学号" name="student_number" value={studentNumber} onChange={(event) => setStudentNumber(event.target.value)} inputMode="numeric" pattern="[0-9]+" maxLength={32} autoComplete="off" placeholder="请输入真实学号" required /><small>学号单独填写，无需与邮箱前缀一致。</small></label>}
       {externalEmail && <label className="form-field"><span>注册邀请码</span><input value={inviteCode} onChange={(event) => setInviteCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} minLength={12} maxLength={12} required /><small>非 @std.uestc.edu.cn 邮箱需要一次性邀请码。</small></label>}
       <label className="form-field"><span>{mode === "reset" ? "新密码" : "密码"}</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={8} maxLength={128} required /><small>8～128 个字符</small></label>
       {mode !== "login" && <><label className="form-field"><span>确认密码</span><input type="password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="new-password" minLength={8} maxLength={128} required /></label><EmailCodeField key={`${mode}-${email}`} email={email} purpose={mode} inviteCode={inviteCode} value={code} onChange={setCode} /></>}

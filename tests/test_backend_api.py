@@ -70,6 +70,7 @@ class PlatformApiTestCase(unittest.TestCase):
             "password": password,
             "confirm_password": password,
             "verification_code": verification_code,
+            "student_number": "2026123456789",
         }
         if invite_code:
             register_payload["invite_code"] = invite_code
@@ -228,6 +229,7 @@ class PlatformApiTestCase(unittest.TestCase):
         invalid = campus_client.post("/api/auth/register", json={
             "email": campus_email,
             "name": "邮箱验证同学",
+            "student_number": "2025120903001",
             "password": "secure-pass-123",
             "confirm_password": "secure-pass-123",
             "verification_code": "000000" if verification_code != "000000" else "111111",
@@ -236,9 +238,11 @@ class PlatformApiTestCase(unittest.TestCase):
         registered = campus_client.post("/api/auth/register", json={
             "email": campus_email,
             "name": "邮箱验证同学",
+            "student_number": "2025120903001",
             "password": "secure-pass-123",
             "confirm_password": "secure-pass-123",
             "verification_code": verification_code,
+            "student_number": "2026123456789",
         })
         self.assertEqual(registered.status_code, 201, registered.get_json())
         self.assertTrue(registered.get_json()["user"]["email_verified"])
