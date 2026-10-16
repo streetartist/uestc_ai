@@ -430,6 +430,7 @@ def work_publication(submission_id):
                             "assets": [asset.to_dict() for asset in version.assets],
                             "competition_ended": competition_ended(submission.problem.track.competition)})
         response.headers["Cache-Control"] = "private, no-store"
+        response.vary.update(("Cookie", "Authorization"))
         return response
     data = request.get_json(silent=True)
     if not isinstance(data, dict) or type(data.get("published")) is not bool:
@@ -616,7 +617,10 @@ def users():
     if request.args.get("q"):
         needle = f"%{request.args['q'].strip()}%"
         query = query.filter((User.name.ilike(needle)) | (User.email.ilike(needle)))
-    return jsonify([{**user.to_dict(), "student_number": user.student_number} for user in query.order_by(User.created_at.desc()).all()])
+    response = jsonify([{**user.to_dict(), "student_number": user.student_number} for user in query.order_by(User.created_at.desc()).all()])
+    response.headers["Cache-Control"] = "private, no-store"
+    response.vary.update(("Cookie", "Authorization"))
+    return response
 
 
 @manage_bp.get("/admin/registration-invites")

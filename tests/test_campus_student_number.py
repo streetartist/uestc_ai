@@ -29,7 +29,10 @@ class CampusStudentNumberTests(unittest.TestCase):
         self.assertNotIn('student_number', result.json['user'])
         self.assertNotIn('student_number', self.app.test_client().get(f'/api/profiles/{user_id}').json)
         self.login(self.admin, 'admin@uestcai.top')
-        admin_user = next(user for user in self.admin.get('/api/admin/users').json if user['id'] == user_id)
+        admin_users = self.admin.get('/api/admin/users')
+        self.assertEqual(admin_users.headers['Cache-Control'], 'private, no-store')
+        self.assertTrue({'Cookie', 'Authorization'}.issubset(set(admin_users.vary)))
+        admin_user = next(user for user in admin_users.json if user['id'] == user_id)
         self.assertEqual(admin_user['student_number'], '1999123456')
         self.assertEqual(self.member.get('/api/admin/users').status_code, 403)
 
