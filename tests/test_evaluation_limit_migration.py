@@ -10,7 +10,7 @@ from flask_migrate import downgrade, upgrade
 from sqlalchemy import MetaData, Table, inspect, text
 from platform_api import create_app
 from platform_api.extensions import db
-from platform_api.models import Competition, Problem, Team, Track, User
+from platform_api.models import Competition, Problem, Team, Track
 
 
 class EvaluationLimitMigrationTests(unittest.TestCase):
@@ -25,16 +25,19 @@ class EvaluationLimitMigrationTests(unittest.TestCase):
                     upgrade(revision="a2c5e94d320b")
                     # Seed only the entities needed by this historical schema;
                     # current editorial models have columns introduced later.
-                    user = User(email="migration@example.com", name="Migration", password_hash="unused", role="member")
+                    users = Table("users", MetaData(), autoload_with=db.engine)
+                    user_id = str(uuid4())
+                    now = datetime.now(timezone.utc)
+                    db.session.execute(users.insert().values(id=user_id, email="migration@example.com", name="Migration",
+                        password_hash="unused", role="member", created_at=now, updated_at=now))
                     competition = Competition(slug="migration", name="Migration", summary="Fixture", status="published")
                     track = Track(competition=competition, slug="track", name="Track")
                     problem = Problem(track=track, code="M-001", slug="migration-problem", title="Migration problem")
-                    db.session.add_all([user, competition, track, problem])
+                    db.session.add_all([competition, track, problem])
                     db.session.commit()
-                    user = User.query.first()
                     competition = Competition.query.first()
                     problem = Problem.query.first()
-                    team = Team(name="migration", competition_id=competition.id, captain_id=user.id, invite_code="migration")
+                    team = Team(name="migration", competition_id=competition.id, captain_id=user_id, invite_code="migration")
                     db.session.add(team)
                     db.session.flush()
                     metadata = MetaData()
@@ -45,7 +48,7 @@ class EvaluationLimitMigrationTests(unittest.TestCase):
                     db.session.execute(submissions.insert().values(id="submitted", problem_id=problem.id, team_id=team.id,
                         title="Before upgrade", status="submitted", current_version=1, created_at=now, updated_at=now))
                     db.session.execute(versions.insert().values(id="version", submission_id="submitted", version=1,
-                        readme_md="", fields={}, snapshot={}, status="submitted", created_by=user.id, created_at=now))
+                        readme_md="", fields={}, snapshot={}, status="submitted", created_by=user_id, created_at=now))
                     for status in ("failed", "superseded", "queued"):
                         # Use the historical schema rather than the latest ORM,
                         # which now also includes frozen runtime snapshots.

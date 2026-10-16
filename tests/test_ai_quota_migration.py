@@ -11,7 +11,7 @@ from sqlalchemy import MetaData, Table, text
 from platform_api import create_app
 from platform_api.extensions import db
 from platform_api.ai_models import AIGrant, AIKey, AIProblemQuota, AIUsage
-from platform_api.models import Competition, Problem, Team, Track, User, utcnow
+from platform_api.models import Competition, Problem, Team, Track, utcnow
 
 
 class ProblemQuotaMigrationTests(unittest.TestCase):
@@ -23,16 +23,20 @@ class ProblemQuotaMigrationTests(unittest.TestCase):
         self.addCleanup(self.close)
         with self.app.app_context():
             upgrade(revision="d8a2f19c630e")
-            user = User(id="legacy-user", name="Legacy", email="legacy@example.com", role="member", password_hash="unused")
+            # Historical migrations must seed their own table shape, rather than
+            # the latest User mapper (which includes later registration fields).
+            users = Table("users", MetaData(), autoload_with=db.engine)
+            db.session.execute(users.insert().values(id="legacy-user", name="Legacy", email="legacy@example.com",
+                role="member", password_hash="unused", created_at=utcnow(), updated_at=utcnow()))
             competition = Competition(id="legacy-competition", name="Legacy", slug="legacy", summary="Legacy")
-            db.session.add_all([user, Team(id="legacy-team", competition=competition, name="Legacy Team", captain_id=user.id, invite_code="legacy-invite")])
+            db.session.add_all([Team(id="legacy-team", competition=competition, name="Legacy Team", captain_id="legacy-user", invite_code="legacy-invite")])
             db.session.commit()
             table = Table("ai_grants", MetaData(), autoload_with=db.engine)
             db.session.execute(table.insert().values(id="legacy-grant", team_id="legacy-team", enabled=True,
                 allowed_models=["model"], allowed_channels=[], max_calls=100, max_tokens=1000000,
                 max_output_tokens=4096, requests_per_minute=60, max_concurrent=2, calls_used=3,
                 tokens_used=40, cost_used_micros=0, created_at=utcnow(), updated_at=utcnow()))
-            db.session.add(AIKey(id="legacy-key", grant_id="legacy-grant", created_by=user.id,
+            db.session.add(AIKey(id="legacy-key", grant_id="legacy-grant", created_by="legacy-user",
                 name="Legacy Key", key_hash="a" * 64, prefix="sk-legacy"))
             db.session.add(AIUsage(id="legacy-usage", grant_id="legacy-grant", key_id="legacy-key",
                 model="model", endpoint="chat/completions", status="completed", deadline=utcnow(),
