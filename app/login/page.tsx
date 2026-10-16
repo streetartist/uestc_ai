@@ -1,5 +1,5 @@
 "use client";
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, useSyncExternalStore } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowRight, LockKeyhole } from "lucide-react";
 import { AppShell } from "@/app/components/AppShell";
@@ -8,6 +8,7 @@ import { useSession } from "@/app/components/SessionProvider";
 import { FieldError } from "@/app/components/ui";
 import { api, formatApiError, jsonBody } from "@/app/lib/api";
 import { validateForm } from "@/app/lib/formValidation";
+const subscribeToHydration = () => () => undefined;
 type Mode = "login" | "register" | "reset";
 const labels: Record<Mode, string> = { login: "登录", register: "创建账户", reset: "找回密码" };
 
@@ -26,6 +27,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const ready = useSyncExternalStore(subscribeToHydration, () => true, () => false);
   const campusEmail = mode === "register" && email.trim().toLowerCase().endsWith("@std.uestc.edu.cn");
   const externalEmail = mode === "register" && email.includes("@") && !campusEmail;
   function switchMode(next: Mode) { setMode(next); setError(""); setNotice(""); setCode(""); setPassword(""); setConfirmation(""); }
@@ -45,7 +47,7 @@ export default function LoginPage() {
   }
   return <AppShell title={labels[mode]} eyebrow="ACCOUNT"><div className="auth-layout">
     <section className="auth-note"><span>平台账户</span><h2>一个账户，连接队伍、作品与个人履历。</h2><p>学生可使用 <strong>@std.uestc.edu.cn</strong> 邮箱注册并填写学号，其他邮箱需要管理员邀请码。</p><p>忘记密码时，通过注册邮箱验证身份即可重置。</p></section>
-    <form className="form-panel auth-form" onSubmit={submit} noValidate><fieldset className="auth-fields" disabled={submitting}>
+    <form className="form-panel auth-form" onSubmit={submit} noValidate><fieldset className="auth-fields" disabled={!ready || submitting}>
       <div className="segmented-control" aria-label="账户操作">{(["login", "register"] as Mode[]).map((item) => <button type="button" className={mode === item ? "selected" : ""} key={item} onClick={() => switchMode(item)}>{item === "login" ? "登录" : "注册"}</button>)}</div>
       {mode === "reset" && <h2>通过邮箱找回密码</h2>}
       {mode === "register" && <label className="form-field"><span>姓名或昵称</span><input value={name} onChange={(event) => setName(event.target.value)} maxLength={80} autoComplete="name" required /></label>}
