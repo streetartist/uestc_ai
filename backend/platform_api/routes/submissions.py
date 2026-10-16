@@ -21,6 +21,16 @@ from ..utils import audit, payload
 
 
 submissions_bp = Blueprint("submissions", __name__)
+
+
+@submissions_bp.after_request
+def protect_material_responses(response):
+    if request.endpoint in {'submissions.public_work_archive', 'submissions.public_work', 'submissions.download_asset'}:
+        response.headers['Cache-Control'] = 'private, no-store'
+        response.vary.update(('Cookie', 'Authorization'))
+    return response
+
+
 ALLOWED_EXTENSIONS = {"md", "pdf", "csv", "json", "zip", "tar", "gz", "png", "jpg", "jpeg", "webp", "mp4"}
 PUBLIC_VERSION_STATUSES = {"submitted", "confirmed", "published"}
 

@@ -23,12 +23,12 @@ class CommunityAccountsTestCase(unittest.TestCase):
         return result.get_json()
 
     def test_captcha_binding_attempts_expiry_and_single_use(self):
-        email = "2025120903010@std.uestc.edu.cn"
+        email = "captcha@std.uestc.edu.cn"
         self.assertEqual(self.member.post("/api/auth/verification-codes", json={"email": email}).status_code, 400)
         challenge = self.challenge(self.member, email)
         self.assertTrue(challenge["image"].startswith("data:image/png;base64,"))
         data = {"email": email, "captcha_id": challenge["id"], "captcha_code": challenge["debug_code"]}
-        self.assertEqual(self.member.post("/api/auth/verification-codes", json={**data, "email": "2025120903011@std.uestc.edu.cn"}).status_code, 400)
+        self.assertEqual(self.member.post("/api/auth/verification-codes", json={**data, "email": "other@std.uestc.edu.cn"}).status_code, 400)
         self.assertEqual(self.member.post("/api/auth/verification-codes", json={**data, "purpose": "reset"}).status_code, 400)
         self.assertEqual(self.member.post("/api/auth/verification-codes", json=data, environ_overrides={"REMOTE_ADDR": "10.0.0.2"}).status_code, 400)
         self.assertEqual(self.member.post("/api/auth/verification-codes", json=data).status_code, 202)
@@ -75,8 +75,8 @@ class CommunityAccountsTestCase(unittest.TestCase):
         self.assertEqual(self.member.post("/api/auth/reset-password", json={"email": "unregistered@example.com", "verification_code": result["debug_code"], "new_password": "secure-new!", "confirm_password": "secure-new!"}).status_code, 400)
 
     def test_mail_failure_does_not_allow_captcha_replay_and_production_hides_digits(self):
-        challenge = self.challenge(self.member, "2025120903012@std.uestc.edu.cn")
-        data = {"email": "2025120903012@std.uestc.edu.cn", "captcha_id": challenge["id"], "captcha_code": challenge["debug_code"]}
+        challenge = self.challenge(self.member, "mail@std.uestc.edu.cn")
+        data = {"email": "mail@std.uestc.edu.cn", "captcha_id": challenge["id"], "captcha_code": challenge["debug_code"]}
         with patch("platform_api.routes.auth.send_verification_email", side_effect=MailDeliveryError("email provider is unavailable")):
             self.assertEqual(self.member.post("/api/auth/verification-codes", json=data).status_code, 503)
         self.assertEqual(self.member.post("/api/auth/verification-codes", json=data).status_code, 400)
@@ -88,7 +88,7 @@ class CommunityAccountsTestCase(unittest.TestCase):
         self.assertEqual(self.member.post("/api/auth/reset-password", json=[]).status_code, 400)
 
     def test_registration_requires_matching_confirmation(self):
-        email = "2025120903013@std.uestc.edu.cn"
+        email = "confirmation@std.uestc.edu.cn"
         code = self.code_request(self.member, email).get_json()["debug_code"]
         data = {"email": email, "name": "Student", "password": "secure-pass!", "verification_code": code}
         self.assertEqual(self.member.post("/api/auth/register", json=data).status_code, 400)

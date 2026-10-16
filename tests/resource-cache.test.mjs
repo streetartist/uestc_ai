@@ -62,7 +62,7 @@ test("TTL revalidates and stale data expires", async () => {
 
 test("live budgets, evaluation records and admin resources bypass cache", async () => {
   globalThis.window = {};
-  for (const path of ["/problems/id/evaluation-budget?team_id=x", "/problems/id/evaluation-runs?team_id=x", "/ai/keys", "/admin/users", "/compute/overview"]) {
+  for (const path of ["/problems/id/evaluation-budget?team_id=x", "/problems/id/evaluation-runs?team_id=x", "/ai/keys", "/admin/users", "/compute/overview", "/works", "/works/private-id"]) {
     assert.equal(cache.isCacheableResource(path), false);
     let calls = 0;
     await cache.fetchResource(path, async () => ++calls);

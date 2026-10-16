@@ -7,6 +7,13 @@ from ..submission_access import can_view_submission
 profiles_bp = Blueprint("profiles", __name__)
 
 
+@profiles_bp.after_request
+def protect_profile_responses(response):
+    response.headers['Cache-Control'] = 'private, no-store'
+    response.vary.update(('Cookie', 'Authorization'))
+    return response
+
+
 @profiles_bp.get("/profiles/<user_id>")
 def profile(user_id):
     user = db.session.get(User, user_id)

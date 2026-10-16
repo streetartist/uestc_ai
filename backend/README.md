@@ -64,7 +64,7 @@ python -m flask --app backend/app.py db upgrade
 
 ## 邮件与注册
 
-注册免邀请码的邮箱格式为 `13 位数字学号@std.uestc.edu.cn`；邮箱别名、其他格式及校外邮箱均需管理员生成的一次性邀请。请求邮件验证码和创建账号两步均检查该规则；既有账号的登录和密码找回不受影响。没有配置 `RESEND_API_KEY` 时邮件不会发送；只有测试或明确设置 `EXPOSE_VERIFICATION_CODE=1` 的本地环境才会在响应中返回验证码。
+校内邮箱可以请求验证码注册，校外邮箱需要管理员生成的一次性邀请。没有配置 `RESEND_API_KEY` 时邮件不会发送；只有测试或明确设置 `EXPOSE_VERIFICATION_CODE=1` 的本地环境才会在响应中返回验证码。
 
 ## 上传与评分
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 import io
 import json
 import os
-import secrets
 import sys
 import tempfile
 import unittest
@@ -18,9 +17,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from platform_api import create_app  # noqa: E402
 from platform_api.extensions import db  # noqa: E402
-from platform_api.models import AuditLog, Competition, Content, RegistrationInvite, Session, User  # noqa: E402
-from platform_api.security import hash_token
-from platform_api.routes.auth import is_campus_email
+from platform_api.models import AuditLog, Competition, Content, Session, User  # noqa: E402
 from platform_api.seed import replace_demo_data  # noqa: E402
 
 
@@ -61,16 +58,6 @@ class PlatformApiTestCase(unittest.TestCase):
         return client.post("/api/auth/verification-codes", json={"email": email, "captcha_id": challenge["id"], "captcha_code": challenge["debug_code"], **extra})
 
     def register(self, client, email, name, password="secure-pass-123", invite_code=None):
-        # Existing fixtures use named aliases; provision explicit organizer
-        # invitations rather than weakening the production student-email rule.
-        if not invite_code and not is_campus_email(email):
-            invite_code = secrets.token_hex(6).upper()
-            with self.app.app_context():
-                admin = User.query.filter_by(role="admin").first()
-                db.session.add(RegistrationInvite(code_hash=hash_token(invite_code), code_prefix=invite_code[:8],
-                    note="Approved test fixture alias", created_by=admin.id,
-                    expires_at=datetime.now(timezone.utc)+timedelta(days=1)))
-                db.session.commit()
         verification_payload = {"email": email}
         if invite_code:
             verification_payload["invite_code"] = invite_code

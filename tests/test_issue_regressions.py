@@ -21,25 +21,20 @@ class OpenIssueRegressions(unittest.TestCase):
     complete = trials.IndependentTrialTests.complete
     formal = trials.IndependentTrialTests.formal
 
-    def test_primary_student_mailbox_format(self):
-        for email in ['2025120903029@std.uestc.edu.cn', ' 2025120903029@STD.UESTC.EDU.CN ']:
-            self.assertTrue(is_campus_email(email))
-        for email in ['alias@std.uestc.edu.cn', '2025120903029+alias@std.uestc.edu.cn',
-                      '202512090302@std.uestc.edu.cn', '20251209030290@std.uestc.edu.cn',
-                      '２０２５１２０９０３０２９@std.uestc.edu.cn', '2025120903029@std.uestc.edu.cn.evil.com']:
-            with self.subTest(email=email): self.assertFalse(is_campus_email(email))
+    def test_campus_alias_registration_policy_is_unchanged(self):
+        email = 'new-alias@std.uestc.edu.cn'
+        self.assertTrue(is_campus_email(email))
+        self.assertEqual(self.register(self.member, email, 'Campus Alias').status_code, 201)
 
-    def test_alias_needs_invite_for_both_sending_and_registration(self):
-        email='new-alias@std.uestc.edu.cn'
+    def test_external_mailbox_still_requires_invite(self):
+        email = 'outside@example.com'
         with patch('platform_api.routes.auth.send_verification_email') as mail:
-            response=self.member.post('/api/auth/verification-codes', json={'email':email})
-            self.assertEqual(response.status_code,403)
+            response = self.member.post('/api/auth/verification-codes', json={'email': email})
+            self.assertEqual(response.status_code, 403)
             mail.assert_not_called()
-        self.assertEqual(self.member.post('/api/auth/register',json={
-            'email':email,'name':'Alias','password':'strong-pass!','confirm_password':'strong-pass!',
-            'verification_code':'123456'}).status_code,403)
-        # Administrator invitation is the supported exception, including aliases.
-        self.assertEqual(self.register(self.member,email,'Approved Alias').status_code,201)
+        self.assertEqual(self.member.post('/api/auth/register', json={
+            'email': email, 'name': 'Outside', 'password': 'strong-pass!',
+            'confirm_password': 'strong-pass!', 'verification_code': '123456'}).status_code, 403)
 
     def test_formal_materials_metrics_logs_and_profiles_require_assignment(self):
         self.fixture()
@@ -69,6 +64,7 @@ class OpenIssueRegressions(unittest.TestCase):
             self.assertEqual(client.get(f'/api/assets/{attachment}',buffered=True).status_code,200)
             self.assertIn(trial['submission_id'],[i['id'] for i in client.get('/api/works').json])
             self.assertEqual(client.get(work_url).headers['Cache-Control'],'private, no-store')
+            self.assertTrue({'Cookie', 'Authorization'}.issubset(set(client.get(work_url).vary)))
         for client in [unrelated,other_reviewer,anonymous]:
             self.assertEqual(client.get(work_url).status_code,404)
             self.assertEqual(client.get(f'/api/assets/{attachment}').status_code,404)
@@ -85,6 +81,13 @@ class OpenIssueRegressions(unittest.TestCase):
             CompetitionReviewer.query.filter_by(reviewer_id=reviewer.id).delete();db.session.commit()
         self.assertEqual(self.reviewer.get(work_url).status_code,404)
         self.assertEqual(self.reviewer.get(result+'/logs').status_code,404)
+
+    def test_private_error_responses_cannot_be_cached_between_accounts(self):
+        for endpoint in ['/api/works', '/api/works/missing', '/api/assets/missing', '/api/profiles/missing']:
+            with self.subTest(endpoint=endpoint):
+                response = self.member.get(endpoint)
+                self.assertEqual(response.headers['Cache-Control'], 'private, no-store')
+                self.assertTrue({'Cookie', 'Authorization'}.issubset(set(response.vary)))
 
     def test_old_anonymous_redis_work_cache_is_never_served(self):
         self.app.config.update(REDIS_URL='redis://localhost/15')

@@ -6,7 +6,7 @@ const retainForMs = 60_000;
 let generation = 0;
 
 export function isCacheableResource(path: string) {
-  return /^\/(?:competitions(?:\/[^/?]+(?:\/tracks\/[^/?]+)?)?|problems(?:\/[^/?]+)?|content(?:\/[^/?]+)?|works(?:\/[^/?]+)?)(?:\?.*)?$/.test(path)
+  return /^\/(?:competitions(?:\/[^/?]+(?:\/tracks\/[^/?]+)?)?|problems(?:\/[^/?]+)?|content(?:\/[^/?]+)?)(?:\?.*)?$/.test(path)
     || /^\/me\/(?:teams|registrations|submissions)$/.test(path);
 }
 

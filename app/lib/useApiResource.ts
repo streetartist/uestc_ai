@@ -21,7 +21,7 @@ export function useApiResource<T>(path: string | null) {
       const data = await fetchResource(path, () => api<T>(path), true);
       if (requestId.current === id) setState({ path, data, loading: false, error: "" });
     } catch (requestError) {
-      if (requestId.current === id) setState((previous) => ({ ...previous, loading: false, error: formatApiError(requestError) }));
+      if (requestId.current === id) setState((previous) => ({ ...previous, data: [401, 403, 404].includes((requestError as { status?: number })?.status ?? 0) ? null : previous.data, loading: false, error: formatApiError(requestError) }));
     }
   }, [path]);
 
@@ -37,7 +37,7 @@ export function useApiResource<T>(path: string | null) {
         const data = await fetchResource(path, () => api<T>(path));
         if (active && requestId.current === id) setState({ path, data, loading: false, error: "" });
       } catch (error) {
-        if (active && requestId.current === id) setState((previous) => ({ ...previous, loading: false, error: formatApiError(error) }));
+        if (active && requestId.current === id) setState((previous) => ({ ...previous, data: [401, 403, 404].includes((error as { status?: number })?.status ?? 0) ? null : previous.data, loading: false, error: formatApiError(error) }));
       }
     });
     return () => { active = false; requestId.current += 1; };

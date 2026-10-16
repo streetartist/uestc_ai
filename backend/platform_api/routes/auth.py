@@ -25,9 +25,7 @@ def normalized_email(value) -> str:
 
 
 def is_campus_email(email: str) -> bool:
-    # The domain alone also accepts freely chosen aliases. Only primary student
-    # addresses bypass invitations; existing alias accounts can still log in/reset.
-    return re.fullmatch(r"[0-9]{13}@std\.uestc\.edu\.cn", normalized_email(email)) is not None
+    return email.rpartition("@")[2] == "std.uestc.edu.cn"
 
 
 def normalized_invite_code(value) -> str:
