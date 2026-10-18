@@ -24,6 +24,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 from .classification_assets import download_weights
+from .depth_ir_dataset import validate_manifest, expose_sample
 
 
 def validate_scenarios(scenes, episodes):
@@ -55,6 +56,8 @@ def load_dataset(directory: Path, expected_digest: str):
     if manifest.is_symlink() or not manifest.is_file() or manifest.stat().st_uid != 0 or manifest.stat().st_size > 16 * 1024 * 1024 or digest_file(manifest) != expected_digest:
         raise ValueError("private dataset manifest failed SHA256 verification")
     data = json.loads(manifest.read_text())
+    if isinstance(data, dict) and data.get("version") == 2:
+        return validate_manifest(directory, data)
     if (not isinstance(data, dict) or set(data) != {"version", "classes", "modality", "samples"}
             or data["version"] != 1 or data["modality"] != "depth"
             or not isinstance(data["classes"], list) or len(data["classes"]) != 40
@@ -168,8 +171,28 @@ class GPUUsage:
             self.stopped.wait(0.1)
 
 
+def install_uploaded_weights(config, program, trusted_weights=None, weight_reference=None):
+    """Only the trusted worker can supply a file; submitted paths are ignored."""
+    ref = config.get('weights_asset')
+    if ref is None:
+        if trusted_weights is not None or weight_reference is not None:
+            raise ValueError('weight snapshot does not match package')
+        return
+    if (not isinstance(ref, dict) or ref != weight_reference or trusted_weights is None
+            or any(key in config for key in ('weights', 'weights_file', 'weights_path'))):
+        raise ValueError('uploaded weights require the matching trusted snapshot')
+    source = Path(trusted_weights)
+    if source.is_symlink() or not source.is_file() or source.stat().st_size != ref['size'] or digest_file(source) != ref['sha256']:
+        raise ValueError('uploaded model weights failed size/SHA256 verification')
+    target = program / 'weights.bin'
+    shutil.copyfile(source, target)
+    target.chmod(0o644)
+    config['weights_path'] = str(target)
+
+
 def evaluate(package: Path, dataset: Path, manifest_digest: str, output: Path, *, gpu: str,
-             seconds=1800, memory_mb=6144, cpus=4, uid=20000, model_hosts=(), cancelled=None):
+             seconds=1800, memory_mb=6144, cpus=4, uid=20000, model_hosts=(), cancelled=None,
+             trusted_weights=None, weight_reference=None):
     import psutil
     if os.geteuid() != 0:
         raise RuntimeError("run the trusted controller as root on an organizer-only instance")
@@ -248,6 +271,7 @@ def evaluate(package: Path, dataset: Path, manifest_digest: str, output: Path, *
     try:
         config = extract_package(package, program)
         config["package_dir"] = str(program)
+        install_uploaded_weights(config, program, trusted_weights, weight_reference)
         local_weights = config.get("weights_file")
         if local_weights is not None:
             if (not isinstance(local_weights, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,120}", local_weights)
@@ -269,6 +293,8 @@ def evaluate(package: Path, dataset: Path, manifest_digest: str, output: Path, *
         script = Path(__file__).with_name("classification_inference.py").resolve()
         environment = {"PATH": str(Path(sys.executable).parent) + ":/usr/bin:/bin", "HOME": str(sandbox_tmp),
                        "TMPDIR": str(sandbox_tmp), "CUDA_VISIBLE_DEVICES": gpu,
+                       "XDG_CONFIG_HOME": str(sandbox_tmp), "YOLO_CONFIG_DIR": str(sandbox_tmp),
+                       "MPLCONFIGDIR": str(sandbox_tmp / "matplotlib"),
                        "OMP_NUM_THREADS": str(cpus), "MKL_NUM_THREADS": str(cpus), "OPENBLAS_NUM_THREADS": str(cpus),
                        "PYTHONNOUSERSITE": "1", "PYTHONUNBUFFERED": "1", "CUBLAS_WORKSPACE_CONFIG": ":4096:8"}
         with (root / "inference.log").open("wb") as log:
@@ -283,9 +309,7 @@ def evaluate(package: Path, dataset: Path, manifest_digest: str, output: Path, *
                 raise ValueError("inference did not initialize correctly")
             for index, sample in enumerate(data["samples"]):
                 remaining()
-                sample_path = exposed / "clip.npy"
-                shutil.copyfile(dataset / sample["file"], sample_path)
-                sample_path.chmod(0o644)
+                sample_path = expose_sample(dataset, sample, exposed, data["version"])
                 # IDs/filenames and hidden labels are never sent to inference.
                 request_id = os.urandom(16).hex()
                 message = {"type": "predict", "id": request_id, "sample_path": str(sample_path)}

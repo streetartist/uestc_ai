@@ -1,0 +1,152 @@
+% !TEX program = xelatex
+\documentclass[UTF8,a4paper,12pt,fontset=windows]{ctexart}
+\usepackage[margin=25mm,top=28mm,bottom=25mm]{geometry}
+\usepackage{amsmath,booktabs,tabularx,enumitem,fancyhdr}
+\setmainfont{Times New Roman}
+\setlength{\parindent}{2em}
+\linespread{1.22}
+\widowpenalty=10000
+\clubpenalty=10000
+\postdisplaypenalty=10000
+\setlist[enumerate,1]{label=(\arabic*),leftmargin=2em,labelsep=.5em,itemsep=.6em,parsep=0pt,topsep=.5em}
+\setlist[enumerate,2]{label=(\roman*),leftmargin=2em,itemsep=.25em}
+\newcommand{\article}[2]{\section*{\centering 第#1条\quad #2}\markboth{第#1条\quad #2}{}}
+\ctexset{section={format=\Large\bfseries\centering,beforeskip=1.1em,afterskip=.7em}}
+\pagestyle{fancy}\fancyhf{}\fancyhead[L]{\small 观行知意：人体日常行为识别挑战赛}\fancyhead[R]{\small 模型测评计分规则}
+\fancyfoot[C]{\thepage}\renewcommand{\headrulewidth}{0pt}
+\setlength{\headheight}{16pt}
+\renewcommand{\arraystretch}{1.25}
+\begin{document}
+\thispagestyle{plain}
+\vspace*{7mm}
+\begin{center}
+{\Large\bfseries 观行知意：人体日常行为识别挑战赛}\\[5pt]
+{\large\bfseries 模型测评计分规则}
+\end{center}
+\vspace{8mm}
+\article{一}{总则与基本概念}
+\begin{enumerate}
+\item \textbf{适用范围。}本规则适用于无界杯 UESTC AI 挑战赛 A 题的模型测评、项目成果计分及相关提交。
+\item \textbf{识别任务。}模型根据一段动作片段，判断其中的人物正在进行哪一种日常动作。任务共设 40 个动作类别，类别编号及顺序以数据包清单为准。
+\item \textbf{数据与模态。}比赛提供深度伪彩图（Depth\_Color）与红外图像（IR）两种模态。每段片段最多包含 32 对同步图像，分辨率为 $304\times228$。参赛队伍可使用其中一种或两种模态；任务训练与推理仅使用本届提供的深度图和 IR，不引入额外模态。
+\item \textbf{数据划分。}训练集含 1,995 段，公开验证集含 466 段，组织方测试集含 470 段。三者按人物划分，人物不跨集合。训练集用于模型训练，公开验证集用于方法比较与参数选择，组织方测试集用于官网测评。
+\item \textbf{测评单元。}一次完整测评包含组织方测试集的全部动作片段。模型逐段接收匿名图像目录，输出按固定类别顺序排列的 40 个有限数值。取最高分对应的类别作为预测；最高分相同时，取最小类别编号。
+\item \textbf{项目成果分。}项目成果满分 100 分，由基准分、提升分、类别表现分和推理效率分组成。各项按同一次完整测评的结果计算。
+\item \textbf{基线模型。}基线模型指组织方发布并冻结代码、权重和运行配置的参考模型，用于确定准确率及推理延迟参考值。
+\end{enumerate}
+
+
+\article{二}{指标与计时}
+\begin{enumerate}
+\item \textbf{准确率。}设测试集片段数为 $N$，预测正确的片段数为 $N_{\mathrm{correct}}$，准确率为
+\[
+ A=100\,\frac{N_{\mathrm{correct}}}{N}.
+\]
+\item \textbf{类别表现。}对固定的 40 个类别分别计算 F1，再取算术平均。设类别 $c$ 的真阳性、假阳性和假阴性数分别为 $\mathrm{TP}_c$、$\mathrm{FP}_c$、$\mathrm{FN}_c$，则
+\[
+ F=\frac{100}{40}\sum_{c=1}^{40}
+ \frac{2\mathrm{TP}_c}{2\mathrm{TP}_c+\mathrm{FP}_c+\mathrm{FN}_c}.
+\]
+分母为零时，该类别的 F1 记为 0。
+\item \textbf{推理延迟。}首个片段用于计时预热，其预测仍计入准确率与类别表现。其余片段的预测耗时取算术平均，记为 $L$，单位为毫秒／片段。
+\item \textbf{计时范围。}单片段耗时包含图像读取、预处理、人物检测、分类、CUDA 同步与选手进程通信。平台下载与数据准备、模型初始化不计入 $L$。
+\end{enumerate}
+
+\begin{center}
+\small 表 1：主要符号与含义\\[5pt]
+\begin{tabularx}{\textwidth}{@{}cXl@{}}
+\toprule
+符号 & 含义 & 单位\\
+\midrule
+$A$ & 本次测评准确率 & 百分数数值\\
+$F$ & 本次测评 Macro F1 & 百分数数值\\
+$L$ & 本次测评平均推理延迟 & 毫秒／片段\\
+$B$ & 冻结基线在同版测试集上的准确率 & 百分数数值\\
+$G$ & 提升分达到上限所需的准确率增量 & 百分点\\
+$T$ & 冻结基线的推理延迟参考值 & 毫秒／片段\\
+\bottomrule
+\end{tabularx}
+\end{center}
+例如，准确率为 $65\%$ 时，公式中取 $A=65$。
+
+\article{三}{项目成果计分}
+\begin{enumerate}
+\item \textbf{基准比例。}定义 $q=\min(A/B,1)$，其中 $0<B<100$。
+\item \textbf{分项计分。}四项得分按表 2 计算。准确率达到 $B$ 时，基准分达到 60 分；准确率达到 $B+G$ 时，提升分达到 20 分。
+\end{enumerate}
+
+
+\begin{center}
+\small 表 2：项目成果分构成\\[6pt]
+\begin{tabularx}{\textwidth}{@{}lXc@{}}
+\toprule
+计分项 & 计算公式 & 满分\\
+\midrule
+基准分 $S_{\mathrm{base}}$ & $60q$ & 60\\[5pt]
+提升分 $S_{\mathrm{gain}}$ & $20\min\!\left(\dfrac{\max(A-B,0)}{G},1\right)$ & 20\\[9pt]
+类别表现分 $S_{\mathrm{class}}$ & $0.10F$ & 10\\[5pt]
+推理效率分 $S_{\mathrm{eff}}$ & $10q\min\!\left(1,\dfrac{T}{L}\right)$ & 10\\[6pt]
+\bottomrule
+\end{tabularx}
+\end{center}
+\begin{enumerate}[start=3]
+\item \textbf{项目成果分。}四项得分之和为项目成果分：
+\[
+ S_{\mathrm{project}}=
+ S_{\mathrm{base}}+S_{\mathrm{gain}}+S_{\mathrm{class}}+S_{\mathrm{eff}}.
+\]
+各分项均为非负数，项目成果分上限为 100 分。计算过程保留原始精度，页面显示两位小数。
+\item \textbf{同分处理。}项目成果分相同时，依次比较准确率 $A$、Macro F1 $F$；仍相同则并列。
+\end{enumerate}
+
+\article{四}{参考值与版本}
+\begin{enumerate}
+\item \textbf{准确率参考值。}$B$ 由冻结基线在同版组织方测试集上的完整测评确定。基线选择与方法调试使用公开验证集。
+\item \textbf{提升幅度。}提升幅度固定为 $G=\min(15,100-B)$，单位为百分点。
+\item \textbf{延迟参考值。}冻结基线在统一评测 GPU 上完整运行公开验证集三次，各次按第二条计算平均延迟，取三次结果的中位数作为 $T$。$T$ 与 $L$ 使用相同 GPU 型号及计时范围，且均大于 0。
+\item \textbf{公布与固定。}开放官网测评前，组织方公布 $B$、$G$、$T$、数据版本、基线代码版本、权重校验值及评测环境。各次测评保存所用规则版本和参考值。
+\end{enumerate}
+
+\article{五}{运行限制与提交}
+\begin{enumerate}
+\item \textbf{官网自测。}每队提供 3 次官网自测。公开验证集可在本地反复测评。
+\item \textbf{运行时限。}单次运行上限为 1,800 秒，自评测程序领取任务、开始准备程序包时计时，包含程序包及权重准备、模型初始化与推理。排队时间不计入。
+\end{enumerate}
+
+
+\begin{enumerate}[start=3]
+\item \textbf{有效结果。}全部 470 段产生有效预测后计算完整成绩。输出维数错误、非有限数值、程序异常或超时使本次运行失败。代码错误与超时占用一次自测；平台故障由组织方依据运行记录核查，确认后退回次数或安排补跑。
+\item \textbf{正式提交。}队伍选择一次已完成的自测结果，提交与该次结果一致的代码包、权重及技术说明。正式提交沿用该次测评结果，不额外占用自测次数。代码或权重变化后须重新自测，并选择对应结果。
+\item \textbf{材料复核。}代码包、权重、运行配置和参数清单用于复核。技术说明应包含数据处理、模型设计、训练设置、验证结果、实验分析与复现命令。
+\end{enumerate}
+
+\article{六}{模型与数据使用}
+\begin{enumerate}
+\item \textbf{模型方法。}允许使用通用公开预训练权重微调，也可从零训练。队伍须列明权重来源及训练设置。允许使用 Coding Agent 辅助开发、调试和实验分析。
+\item \textbf{参数限制。}分类器、检测器及其他参与推理的模型合计不超过 100M 参数，冻结参数计入总量。
+\item \textbf{模态范围。}本届仅提供深度图与 IR。可调整取帧、裁剪、输入尺寸及两种模态的融合方式；额外模态不用于本任务的训练、辅助监督、蒸馏或推理。通用公开预训练权重按本条第 (1) 项使用。
+\item \textbf{数据范围。}本届提供范围以外的 CUHK 片段不作为额外训练数据。测试片段及标签不用于训练、伪标签生成或模型选择。使用 CUHK 数据训练过的外部权重，须披露训练划分并符合上述范围。
+\end{enumerate}
+
+
+\article{七}{违规与处置}
+\begin{enumerate}
+\item \textbf{违规行为。}包括利用测试标签、来源编号或映射表获取答案；绕过接口读取私有清单、标签或其他样本；测评中违规联网、人工介入，以及篡改预测和运行记录。选手程序在测评期间离线运行，声明的权重由平台提前准备。
+\item \textbf{认定与处理。}组织方依据代码、权重、运行日志和复现结果核查，队伍可提交说明。确认违规或参数量超限的提交无效；已据此公布的成绩、名次或奖项相应撤销或更正。
+\end{enumerate}
+
+\article{八}{赛事成绩}
+\begin{enumerate}
+\item \textbf{第一阶段成绩。}项目成果与技术说明均采用百分制，第一阶段成绩为
+\[
+ S_{\mathrm{phase1}}=0.80S_{\mathrm{project}}+0.20S_{\mathrm{report}}.
+\]
+\item \textbf{赛事总成绩。}答辩采用百分制，总成绩为
+\[
+ S_{\mathrm{total}}=0.60S_{\mathrm{phase1}}+0.40S_{\mathrm{defense}}.
+\]
+\item \textbf{研究内容。}技术说明与答辩可报告方法比较、消融实验、错例分析和研究发现，纳入对应环节评分。
+\end{enumerate}
+\article{九}{附则}
+规则补充与问题答复在官网及比赛群统一发布。涉及数据、计分或评测环境的调整，组织方公布版本、生效时间及已有提交的处理方式。
+\end{document}

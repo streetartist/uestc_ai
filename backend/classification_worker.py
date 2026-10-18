@@ -49,6 +49,13 @@ def execute(base, job, *, image_uuid, dataset_root, gpu, log_root, cancelled=Non
         download(base, job["asset_url"], job["lease_token"], package)
         if digest_file(package) != job["submission"].get("package_sha256"):
             raise ValueError("frozen inference package failed SHA256 verification")
+        trusted_weights = None
+        weight_ref = job['submission'].get('weights_asset')
+        if weight_ref:
+            trusted_weights = Path(directory) / 'weights.bin'
+            download(base, job['weights_url'], job['lease_token'], trusted_weights)
+            if trusted_weights.stat().st_size != weight_ref['size'] or digest_file(trusted_weights) != weight_ref['sha256']:
+                raise ValueError('frozen model weights failed size/SHA256 verification')
         episodes = []
         for index, scene in enumerate(runtime["scenarios"]):
             path = datasets / scene["dataset"]
@@ -60,7 +67,7 @@ def execute(base, job, *, image_uuid, dataset_root, gpu, log_root, cancelled=Non
             metrics = evaluate(package, path, scene["manifest_sha256"], Path(log_root) / job["id"] / str(index),
                 gpu=gpu, seconds=seconds, cpus=resources["cpus"], memory_mb=resources["memory_mb"],
                 model_hosts=os.environ.get("EVALUATION_MODEL_HOSTS", "huggingface.co,*.huggingface.co,*.hf.co").split(","),
-                cancelled=cancelled)
+                cancelled=cancelled, trusted_weights=trusted_weights, weight_reference=weight_ref)
             episodes.append({key: metrics[key] for key in config["metrics"]})
         from evaluation_evidence import publish_classification
         publish_classification(base, job, log_root)

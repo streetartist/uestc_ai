@@ -25,6 +25,7 @@ from .routes.problem_setup import setup_bp
 from .routes.profiles import profiles_bp
 from .routes.checkpoints import checkpoints_bp
 from .routes.evaluation_evidence import evidence_bp
+from .routes.model_weights import model_weights_bp
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -75,6 +76,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         MAX_CONTENT_LENGTH=26 * 1024 * 1024,
         MARKDOWN_ASSET_MAX_SIZE=8 * 1024 * 1024,
         SUBMISSION_ASSET_MAX_SIZE=20 * 1024 * 1024,
+        CLASSIFICATION_WEIGHT_UPLOAD_ENABLED=os.environ.get('CLASSIFICATION_WEIGHT_UPLOAD_ENABLED', '0') == '1',
+        CLASSIFICATION_WEIGHT_TEAM_BYTES=int(os.environ.get('CLASSIFICATION_WEIGHT_TEAM_BYTES', str(8 * 1024**3))),
         SECRET_KEY=os.environ.get("SECRET_KEY", "dev-change-me"),
         SESSION_COOKIE_SECURE=os.environ.get("SESSION_COOKIE_SECURE", "0") == "1",
         SESSION_COOKIE_SAMESITE=os.environ.get("SESSION_COOKIE_SAMESITE", "Lax"),
@@ -155,6 +158,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(submissions_bp, url_prefix="/api")
     app.register_blueprint(evaluations_bp, url_prefix="/api")
     app.register_blueprint(evaluation_trials_bp, url_prefix="/api")
+    app.register_blueprint(model_weights_bp, url_prefix="/api")
     app.register_blueprint(ai_bp, url_prefix="/api")
     app.register_blueprint(mail_bp, url_prefix="/api")
     app.register_blueprint(compute_bp, url_prefix="/api")

@@ -1,0 +1,95 @@
+{
+  "dataset": "compact-depth-ir-32-v1",
+  "train_samples": 1995,
+  "validation_samples": 466,
+  "recommended_baseline": "compact-depth-ir-full-r34-16frames",
+  "runs": [
+    {
+      "run": "compact-depth-ir-full-r34-16frames",
+      "validation": {
+        "accuracy": 63.94849785407725,
+        "macro_f1": 57.54020469871512,
+        "validation_samples": 466,
+        "precision": "float32",
+        "batch_size": 1,
+        "cache_classifier_seconds": 5.37002507224679,
+        "training_fp16_predictions_available": 466,
+        "training_fp16_prediction_differences": 0
+      },
+      "epochs": 30,
+      "train_eval_seconds": 833.3178260326385,
+      "peak_allocated_mib": 9962.46630859375,
+      "inference_pipeline_parameters": 63514700,
+      "checkpoint_selection": "last",
+      "weights": {
+        "path": "baseline.pt",
+        "bytes": 254409236,
+        "sha256": "a4e19dbb6d6cef9107d6cd69e80ea15c8593c36e1fa4544ecef033478ae024c5"
+      },
+      "isolated_runner": {
+        "status": "passed",
+        "samples": 8,
+        "weight_transport": "pre_staged_local_readonly"
+      },
+      "summary_sha256": "a9818e6e64a23e83f1f3acfca250264252d0c6cd7f6758a6ec243145b3052fc9"
+    },
+    {
+      "run": "compact-depth-ir-yolo-r34-baseline",
+      "validation": {
+        "accuracy": 64.5922746781116,
+        "macro_f1": 57.69315233907643,
+        "validation_samples": 466,
+        "precision": "float32",
+        "batch_size": 1,
+        "cache_classifier_seconds": 5.0829419400542974,
+        "training_fp16_predictions_available": 466,
+        "training_fp16_prediction_differences": 0
+      },
+      "epochs": 30,
+      "train_eval_seconds": 853.5000281333923,
+      "peak_allocated_mib": 9962.46630859375,
+      "inference_pipeline_parameters": 66138780,
+      "checkpoint_selection": "last",
+      "weights": {
+        "path": "baseline.pt",
+        "bytes": 254409236,
+        "sha256": "bb19b3fa4485bf1d4659677c7316f962819ea7521bd6c0cb336ac5d03a85cc3a"
+      },
+      "isolated_runner": {
+        "status": "passed",
+        "samples": 8,
+        "weight_transport": "pre_staged_local_readonly"
+      },
+      "summary_sha256": "936b79f87c9ee5bc65f01050e33f4e669537a6ea0c8208a120182a10a3ee63bc"
+    },
+    {
+      "run": "compact-depth-ir-yolo-r34-32frames",
+      "validation": {
+        "accuracy": 67.38197424892704,
+        "macro_f1": 59.84003970080879,
+        "validation_samples": 466,
+        "precision": "float32",
+        "batch_size": 1,
+        "cache_classifier_seconds": 9.502026323229074,
+        "training_fp16_predictions_available": 466,
+        "training_fp16_prediction_differences": 0
+      },
+      "epochs": 30,
+      "train_eval_seconds": 1609.7371661663055,
+      "peak_allocated_mib": 19174.20654296875,
+      "inference_pipeline_parameters": 66138780,
+      "checkpoint_selection": "last",
+      "weights": {
+        "path": "baseline.pt",
+        "bytes": 254409236,
+        "sha256": "7e61eae390f0e4552b269528eaa6ce8c355d5c00149fb6438c2d856a37ec40a5"
+      },
+      "isolated_runner": {
+        "status": "passed",
+        "samples": 8,
+        "weight_transport": "pre_staged_local_readonly"
+      },
+      "summary_sha256": "8aeb169b53576ea6048951ffcbd6f11bca669a0be5057dd9aedcdb3efb01e40f"
+    }
+  ]
+}

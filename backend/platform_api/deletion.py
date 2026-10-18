@@ -25,6 +25,7 @@ from .models import (
     TeamMember, Track, User,
 )
 from .progress_models import CheckpointEntry, EvaluationArtifact
+from .model_weights import ModelWeightAsset
 from .reviewing import is_review_locked
 from .utils import audit
 
@@ -110,6 +111,8 @@ class _Scope:
         names = set()
         for statement in statements:
             names.update(name for name in db.session.scalars(statement) if name)
+        for asset in ModelWeightAsset.query.filter(or_(self.T(ModelWeightAsset.team_id), self.P(ModelWeightAsset.problem_id))):
+            names.update(asset.file_names())
         return sorted(names)
 
     def counts(self) -> dict:
@@ -119,6 +122,7 @@ class _Scope:
             "submissions": _count(Submission, Submission.id.in_(self.sub_sel)),
             "submission_versions": _count(SubmissionVersion, SubmissionVersion.id.in_(self.ver_sel)),
             "submission_assets": _count(SubmissionAsset, SubmissionAsset.submission_version_id.in_(self.ver_sel)),
+            "model_weight_assets": _count(ModelWeightAsset, or_(self.T(ModelWeightAsset.team_id), self.P(ModelWeightAsset.problem_id))),
             "reviews": _count(Review, Review.submission_version_id.in_(self.ver_sel)),
             "score_batches": _count(ScoreBatch, ScoreBatch.id.in_(self.batch_sel)),
             "scores": _count(Score, self.score_cond),
@@ -148,6 +152,7 @@ class _Scope:
         run(delete(CheckpointEntry).where(self.ckpt_cond))
         run(delete(EvaluationArtifact).where(EvaluationArtifact.run_id.in_(self.run_sel)))
         run(delete(EvaluationRun).where(EvaluationRun.id.in_(self.run_sel)))
+        run(delete(ModelWeightAsset).where(or_(self.T(ModelWeightAsset.team_id), self.P(ModelWeightAsset.problem_id))))
         run(delete(Score).where(self.score_cond))
         run(delete(ScoreBatch).where(ScoreBatch.id.in_(self.batch_sel)))
         run(delete(Review).where(Review.submission_version_id.in_(self.ver_sel)))
@@ -413,6 +418,7 @@ def _still_referenced(name: str) -> bool:
         (SubmissionAsset, SubmissionAsset.storage_name), (StagedSubmissionAsset, StagedSubmissionAsset.storage_name),
         (MarkdownAsset, MarkdownAsset.storage_name), (EvaluationArtifact, EvaluationArtifact.storage_name),
         (EvaluationRun, EvaluationRun.package_storage_name), (CheckpointEntry, CheckpointEntry.package_storage_name),
+        (ModelWeightAsset, ModelWeightAsset.storage_name),
     )
     return any(_count(model, column == name) for model, column in checks)
 

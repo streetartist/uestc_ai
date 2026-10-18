@@ -1,0 +1,101 @@
+{
+  "status": "complete",
+  "version": "cuhk-depth-ir-a100-v2-20261019",
+  "reference": {
+    "baseline_accuracy": 70.0,
+    "gain_span_pp": 15,
+    "latency_ms": 96.42350408899527
+  },
+  "baseline_weights_sha256": "a4e19dbb6d6cef9107d6cd69e80ea15c8593c36e1fa4544ecef033478ae024c5",
+  "test_archive_sha256": "a2b0d01d0b896b2f8e0c499a03cce2ba2f8a7dcbe236bde93b3d1c2370ae5bf6",
+  "test_manifest_sha256": "e882068de745d7faa6b411e91d230e41e1a84ebeb788d2d632a243a9c459e330",
+  "validation_manifest_sha256": "c709ba5d3a79f76b36aa55d532776de3d832e62d92902a584e4931907bfab4d6",
+  "package_sha256": "403b85630c90e594dedd07d213bb2664876865f3f96f118529ae25d9bae5ad6c",
+  "runner_sources_sha256": {
+    "calibrate_classification_baseline.py": "ac6bfab5265e1e74e40af0c1423fe6d9d20a4081cbcb5e24a86f03900f2e396a",
+    "evaluation_adapters/classification_assets.py": "f44caa544384989084d838d6180e30297316c82f3c4e75dd49414350caef634f",
+    "evaluation_adapters/classification_inference.py": "9f3411730e9893edb088053f54d5cfcb9495a25dfc99dc2fe86a388090ac836e",
+    "evaluation_adapters/classification_runner.py": "de3959657be6e1ad4501cc682457c56eb62f3cfa207109dbcc30c63646212d47",
+    "evaluation_adapters/classification_sandbox.py": "0067d6bdf5939c25d4e603122557be7f9dd36998b2905ec04715b76340cc23b6",
+    "evaluation_adapters/depth_ir_dataset.py": "6335a563b8ae19df73a125bf009e7df41625349965d04cec824e93b2e0188c11"
+  },
+  "gpu": {
+    "model": "NVIDIA A100-SXM4-40GB",
+    "driver": "580.126.20",
+    "vram_mib": 40960
+  },
+  "environment": {
+    "python": "3.10.20",
+    "packages": {
+      "torch": "2.5.1+cu118",
+      "torchvision": "0.20.1+cu118",
+      "numpy": "2.2.6",
+      "Pillow": "12.2.0",
+      "timm": "1.0.27",
+      "safetensors": "0.8.0"
+    }
+  },
+  "resources": {
+    "cpus": 4,
+    "memory_mb": 6144,
+    "seconds_per_run": 1800
+  },
+  "timing": "mean full per-clip inference latency; first warmup clip excluded; median of 3 full-validation means",
+  "weight_transport": "pre_staged_local_readonly",
+  "runs": [
+    {
+      "run": "test",
+      "samples": 470,
+      "metrics": {
+        "accuracy": 70.0,
+        "macro_f1": 57.59847029293807,
+        "latency_ms": 94.52456478545788,
+        "peak_vram_mb": 1085.0
+      },
+      "judge_wall_seconds": 77.98216513358057,
+      "evidence_sha256": "0dfb506fb8d00385fed4919e23f6da5e7b936d795bbd97cd916f009ad82cd171"
+    },
+    {
+      "run": "validation-1",
+      "samples": 466,
+      "metrics": {
+        "accuracy": 63.94849785407725,
+        "macro_f1": 57.54020469871514,
+        "latency_ms": 96.53910229843791,
+        "peak_vram_mb": 1085.0
+      },
+      "judge_wall_seconds": 76.346608992666,
+      "evidence_sha256": "6b959ca5a59c90f45a339ad4267789798f8b952485724e7976ddc1245d4a5c95"
+    },
+    {
+      "run": "validation-2",
+      "samples": 466,
+      "metrics": {
+        "accuracy": 63.94849785407725,
+        "macro_f1": 57.54020469871514,
+        "latency_ms": 96.42350408899527,
+        "peak_vram_mb": 1085.0
+      },
+      "judge_wall_seconds": 76.02956144884229,
+      "evidence_sha256": "a95b453d6a9f96627af9c36f149be6eee3e21bb9c3dc64a5c1ad31282970add2"
+    },
+    {
+      "run": "validation-3",
+      "samples": 466,
+      "metrics": {
+        "accuracy": 63.94849785407725,
+        "macro_f1": 57.54020469871514,
+        "latency_ms": 95.86769942074052,
+        "peak_vram_mb": 1085.0
+      },
+      "judge_wall_seconds": 75.53729914315045,
+      "evidence_sha256": "5579b314d585553dbd50a8095c113b39a7aafc2986e73092d6bc3b4ffd2bb6c8"
+    }
+  ],
+  "started": 1792349543.147679,
+  "finished": 1792349933.7944932,
+  "wall_seconds": 390.64681458473206,
+  "scope": "Frozen 16-frame full-image baseline; 470 private test clips once and 466 public validation clips three times; organizer predictions retained privately.",
+  "validation_predictions_identical": true,
+  "validation_prediction_comparison_samples": 466
+}

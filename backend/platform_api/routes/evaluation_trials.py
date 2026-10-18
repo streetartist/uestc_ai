@@ -106,6 +106,14 @@ def start_team_trial(problem_id):
     source = upload_folder / packages[0].storage_name
     if not source.is_file():
         return jsonify({"error": "retained submission asset is unavailable"}), 409
+    weights_asset = None
+    if config['adapter'] == 'classification-v1':
+        from ..model_weights import resolve_package_weight
+        import zipfile
+        try:
+            weights_asset = resolve_package_weight(source, team.id, problem.id)
+        except (ValueError, KeyError, zipfile.BadZipFile):
+            return jsonify({'error': 'classification weight reference or package is invalid for this team'}), 400
     if not submission:
         submission = Submission(problem=problem, team=team, title=problem.title)
         db.session.add(submission)
@@ -126,6 +134,8 @@ def start_team_trial(problem_id):
             submission_snapshot={"captured_at": utcnow().isoformat(), "asset_name": packages[0].original_name,
                 "performance_scoring": deepcopy((problem.scoring_config or {}).get("performance_scoring")),
                 "package_sha256": package_digest(target)})
+        if weights_asset:
+            run.submission_snapshot = {**run.submission_snapshot, 'weights_asset': weights_asset}
         db.session.add(run)
         from ..judge import bind_run
         bind_run(run, problem)

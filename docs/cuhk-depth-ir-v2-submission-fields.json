@@ -1,0 +1,11 @@
+{
+  "fields": ["inference_model_inventory"],
+  "field_definitions": {
+    "inference_model_inventory": {
+      "label": "推理模型与参数量",
+      "type": "textarea",
+      "required": true,
+      "help": "列出分类器、检测器及其他推理模型的名称、参数量、权重来源与 SHA256、统计命令和合计参数量。冻结参数计入；全部推理模型合计不超过 100M。"
+    }
+  }
+}

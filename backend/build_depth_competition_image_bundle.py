@@ -10,17 +10,20 @@ ROOT = Path(__file__).resolve().parents[1]
 def build(output):
     names = ("classification_worker.py", "evaluation_worker.py", "evaluation_evidence.py", "classification_smoke_test.py",
              "build_classification_image_manifest.py", "build_classification_package.py",
-             "prepare_cuhkx_depth.py", "download_cuhkx_official.py", "install_classification_image_data.py")
+             "prepare_cuhkx_depth.py", "download_cuhkx_official.py", "install_classification_image_data.py",
+             "install_classification_v2_data.py", "install_classification_v2_shards.py", "prepare_depth_ir_dataset.py",
+             "classification_v2_acceptance.py")
     entries = [(ROOT / "backend" / name, "backend/" + name) for name in names]
     adapters = ROOT / "backend/evaluation_adapters"
     for name in ("__init__.py", "classification_assets.py", "classification_inference.py",
-                 "classification_runner.py", "classification_sandbox.py"):
+                 "classification_runner.py", "classification_sandbox.py", "depth_ir_dataset.py"):
         entries.append((adapters / name, "backend/evaluation_adapters/" + name))
+    entries.append((ROOT / "backend/platform_api/performance_scoring.py", "backend/platform_api/performance_scoring.py"))
     for name in ("train.py", "network.py", "inference.py", "config.json", "predict.py"):
         entries.append((adapters / "classification_example" / name,
                         "backend/evaluation_adapters/classification_example/" + name))
     for name in ("autodl-classification-install.sh", "autodl-depth-competition-install.sh",
-                 "autodl-classification-start.sh", "autodl-classification.env.example"):
+                 "autodl-classification-start.sh", "autodl-classification.env.example", "autodl-depth-ir-v2-install.sh"):
         entries.append((ROOT / "deploy/linux" / name, name))
     entries.append((ROOT / "deploy/linux/autodl-depth-competition.README.md", "README.md"))
     for name in ("autodl-depth-participant.README.md", "autodl-depth-organizer.README.md"):

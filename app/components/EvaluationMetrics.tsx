@@ -24,8 +24,16 @@ export function EvaluationMetrics({ config, run, showTiming = true, showLogs = t
     <header><strong>运行指标</strong><span>{run ? evaluationStatus(run) : "等待提交"}</span></header>
     {run && showTiming && <EvaluationTiming run={run} />}
     {run?.status === "completed" ? <>
-      {run.performance && <p><strong>自动表现分：{run.performance.score.toFixed(2)} / 100</strong> · 按题面公式计算，正式提交后用于第一阶段评分。</p>}
-      <h4>跨场景平均</h4>
+      {run.performance && <p><strong>{run.performance.preset === "wujie-depth-baseline-v2" ? "项目成果分" : "自动表现分"}：{run.performance.score.toFixed(2)} / 100</strong> · 按题面公式计算，正式提交后用于第一阶段评分。</p>}
+      {run.performance && config.adapter === "classification-v1" && <p>计分版本：{run.performance.preset === "wujie-depth-baseline-v2" ? "v2 基准与提升" : run.performance.preset === "wujie-depth-v1" ? "v1 准确率加权" : run.performance.preset}</p>}
+      {run.performance?.preset === "wujie-depth-baseline-v2" && run.performance.reference && <p>本次计分参考：B = {metricValue(run.performance.reference.baseline_accuracy)}%；G = {metricValue(run.performance.reference.gain_span_pp)} 个百分点；T = {metricValue(run.performance.reference.latency_ms)} ms／片段。</p>}
+      {run.performance?.components && <dl aria-label="项目成果计分明细">
+        <div><dt>基准分</dt><dd>{metricValue(run.performance.components.baseline)} / 60</dd></div>
+        <div><dt>提升分</dt><dd>{metricValue(run.performance.components.improvement)} / 20</dd></div>
+        <div><dt>类别表现</dt><dd>{metricValue(run.performance.components.macro_f1)} / 10</dd></div>
+        <div><dt>推理效率</dt><dd>{metricValue(run.performance.components.efficiency)} / 10</dd></div>
+      </dl>}
+      <h4>{config.adapter === "classification-v1" ? "评测集整体结果" : "跨场景平均"}</h4>
       <dl>{config.metrics.map((key) => <div key={key}><dt>{definitions[key]?.label ?? key}</dt><dd>{metricValue(run.metrics[key], definitions[key]?.unit)}</dd></div>)}</dl>
       {run.episodes?.length ? <div className="evaluation-episodes">
         {run.episodes.map((episode, index) => {
@@ -49,6 +57,6 @@ export function EvaluationMetrics({ config, run, showTiming = true, showLogs = t
     {config.api?.enabled && run && <p>本次运行 API 调用：{run.api_calls_used ?? 0} / {config.api.max_calls}</p>}
     {run?.artifacts?.length ? <div className="evaluation-evidence"><h4>运行记录</h4>{run.artifacts.map((artifact) => <a key={artifact.id} href={resolveMarkdownUrl(artifact.url)} target="_blank" rel="noreferrer">{artifact.name.endsWith("replay.gif") ? "下载场景回放" : artifact.name.endsWith("classification.json") ? "下载各类表现与混淆矩阵" : "下载动作轨迹"} · {artifact.name.split("-")[1]}</a>)}</div> : null}
     {run && showLogs && <EvaluationLogs run={run} />}
-    <small>{run?.performance ? "方案说明和答辩由评委独立评分；自动表现分由平台计算。" : "指标供评委参考；如本题配置自动表现分，将按题面规则计分。"}</small>
+    <small>{run?.performance ? "技术说明和答辩由评委评分；运行成绩由平台按题面公式计算。" : "指标供评委参考；如本题配置自动表现分，将按题面规则计分。"}</small>
   </section>;
 }

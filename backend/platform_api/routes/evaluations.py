@@ -233,6 +233,8 @@ def claim_run():
             "runtime": deepcopy(run.runtime_snapshot),
             "submission": deepcopy(run.submission_snapshot),
             "asset_url": f"/api/evaluation-worker/runs/{run.id}/asset",
+            **({'weights_url': f'/api/evaluation-worker/runs/{run.id}/weights'}
+               if run.submission_snapshot.get('weights_asset') else {}),
             "logs_url": f"/api/evaluation-worker/runs/{run.id}/logs",
             "attempt": run.attempts,
         })
@@ -277,6 +279,24 @@ def run_asset(run_id: str):
     if not asset or asset.submission_version_id != run.submission_version_id:
         return jsonify({"error": "evaluation asset unavailable"}), 404
     return send_from_directory(Path(current_app.config["UPLOAD_FOLDER"]), asset.storage_name, as_attachment=True, download_name=asset.original_name)
+
+
+@evaluations_bp.get('/evaluation-worker/runs/<run_id>/weights')
+def run_weights(run_id):
+    from ..model_weights import ModelWeightAsset
+    run = leased_run(run_id)
+    if not run:
+        return jsonify({'error': 'evaluation lease invalid or expired'}), 403
+    ref = (run.submission_snapshot or {}).get('weights_asset') or {}
+    asset = db.session.get(ModelWeightAsset, ref.get('id')) if ref.get('id') else None
+    if (not asset or asset.state != 'ready' or asset.descriptor() != ref
+            or asset.problem_id != run.problem_id
+            or asset.team_id != run.submission_version.submission.team_id):
+        return jsonify({'error': 'frozen model weights unavailable'}), 404
+    response = send_from_directory(current_app.config['UPLOAD_FOLDER'], asset.storage_name,
+                                   as_attachment=True, download_name=asset.original_name)
+    response.headers['Cache-Control'] = 'private, no-store'
+    return response
 
 
 @evaluations_bp.post("/evaluation-worker/runs/<run_id>/api")

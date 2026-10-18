@@ -21,6 +21,12 @@ export type RegistrationInvite = {
   created_at: string;
 };
 
+export type PerformanceScoring = {
+  preset: string;
+  criterion: string;
+  reference?: { baseline_accuracy: number; gain_span_pp: number; latency_ms: number };
+};
+
 export type Problem = {
   id: string;
   track_id: string;
@@ -35,7 +41,7 @@ export type Problem = {
   source_url?: string | null;
   submission_schema: SubmissionSchema;
   judging_schema: { rubric?: Record<string, number> };
-  scoring_config: { external_weight_percent?: number; review_score_mode?: "sum" | "weighted"; external_score_label?: string; online_score_label?: string; performance_scoring?: { preset: string; criterion: string } };
+  scoring_config: { external_weight_percent?: number; review_score_mode?: "sum" | "weighted"; external_score_label?: string; online_score_label?: string; performance_scoring?: PerformanceScoring };
   evaluation_config: EvaluationConfig;
 };
 
@@ -112,7 +118,7 @@ export type EvaluationRun = {
   time_seconds: number;
   metrics: Record<string, number>;
   metric_definitions: EvaluationAdapter["metrics"];
-  performance?: { preset: string; criterion: string; score: number } | null;
+  performance?: (PerformanceScoring & { score: number; components?: { baseline: number; improvement: number; macro_f1: number; efficiency: number } }) | null;
     artifacts?: Array<{ id: string; name: string; size: number; url: string }>;
   episodes: Array<Record<string, number> | {
     scenario: { id: string; label: string; difficulty: "beginner" | "intermediate" | "challenge" };

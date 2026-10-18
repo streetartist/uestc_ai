@@ -6,6 +6,7 @@ from flask import current_app
 from werkzeug.security import generate_password_hash
 
 from .extensions import db
+from .model_weights import ModelWeightAsset
 from .models import (
     AuditLog, Competition, CompetitionReviewer, Content, EvaluationRun, MarkdownAsset, Problem,
     Registration, Review, Score, ScoreBatch, StagedSubmissionAsset, Submission,
@@ -27,7 +28,7 @@ def validate_demo_data(
         raise RuntimeError("Database tracks or problems do not match the expected demo")
     protected_models = (
         Team, Registration, Submission, SubmissionVersion, SubmissionAsset, StagedSubmissionAsset,
-        Review, ScoreBatch, Score, MarkdownAsset, EvaluationRun,
+        Review, ScoreBatch, Score, MarkdownAsset, EvaluationRun, ModelWeightAsset,
     )
     if any(db.session.query(model.id).first() is not None for model in protected_models):
         raise RuntimeError("Database has activity records; demo replacement was cancelled")
