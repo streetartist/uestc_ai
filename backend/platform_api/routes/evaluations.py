@@ -4,6 +4,7 @@ import hmac
 import json
 import re
 import secrets
+import time
 import urllib.error
 import urllib.request
 from copy import deepcopy
@@ -14,8 +15,10 @@ from flask import Blueprint, current_app, jsonify, request, send_from_directory
 from sqlalchemy import and_, case, or_, update
 from sqlalchemy.exc import IntegrityError
 
-from ..evaluation import catalog, evaluation_budget, validate_metrics
-from ..evaluation_trials import can_view_result
+from ..evaluation import adapters, catalog, evaluation_budget, validate_metrics, validate_evaluation_config
+from ..evaluation_trials import can_view_result, package_digest
+from ..final_evaluation import required as final_required, digest, scene_identity, final_run, api_policy, validate_api_body
+from ..final_evaluation import LIBERO_FINAL_WEIGHTS, validate_libero_final_scenes
 from ..extensions import db
 from ..models import EvaluationRun, EvaluationWorkerState, ProblemRuntime, Problem, Submission, SubmissionAsset, SubmissionVersion, Team, iso
 from ..security import current_user, hash_token, require_user, team_member
@@ -105,7 +108,122 @@ def version_runs(version_id: str):
     if user.role not in {"admin", "organizer"} and not team_member(version.submission.team_id, user.id):
         return jsonify({"error": "insufficient permissions"}), 403
     runs = EvaluationRun.query.filter_by(submission_version_id=version_id).order_by(EvaluationRun.created_at.desc()).all()
-    return jsonify([run.to_dict() for run in runs])
+    return jsonify([run.to_dict() for run in runs if can_view_result(run)])
+
+
+@evaluations_bp.post("/submission-versions/<version_id>/final-evaluation-runs")
+@require_user("admin", "organizer")
+def start_final(version_id):
+    from ..ai_quotas import lock_problem
+    from ..problem_setup import validate_runtime, runtime_images_allowed
+    from ..ai_gateway import GatewayError
+    version = db.session.get(SubmissionVersion, version_id)
+    if not version:
+        return jsonify({"error": "submission version not found"}), 404
+    problem = version.submission.problem
+    lock_problem(problem.id)
+    db.session.refresh(version)
+    if not final_required(problem) or version.status != "submitted":
+        return jsonify({"error": "请提交 LIBERO 作品并启用独立最终评测。"}), 409
+    deadline = problem.track.competition.ends_at
+    if not deadline or aware(deadline) > now_utc():
+        return jsonify({"error": "最终评测在提交截止后启动。"}), 409
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) != {"scene_set_version", "runtime", "evaluation_config"}:
+        return jsonify({"error": "请提供场景集版本、独立运行配置和最终评测预算。"}), 400
+    label = data["scene_set_version"]
+    if not isinstance(label, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", label):
+        return jsonify({"error": "invalid scene_set_version"}), 400
+    try:
+        config = validate_evaluation_config(data["evaluation_config"])
+        if any(config.get(k) != problem.evaluation_config.get(k) for k in ("adapter", "task", "metrics")):
+            raise ValueError("最终评测须沿用已公布的评测器、任务类型和指标。")
+        runtime = validate_runtime(data["runtime"], config)
+        if not runtime or not runtime.get("scenarios"):
+            raise ValueError("最终评测需要独立的私有场景配置。")
+        libero_v2 = (problem.scoring_config or {}).get("performance_scoring", {}).get("preset") == "wujie-libero-v2"
+        runtime_images_allowed(runtime, config)
+        final_api = api_policy() if config["api"]["enabled"] else None
+        public_scenes = (problem.runtime.config if problem.runtime else {}).get("scenarios", [])
+        trial_runtimes = EvaluationRun.query.filter_by(problem_id=problem.id, purpose="trial").all()
+        prior_scenes = [*public_scenes, *(s for r in trial_runtimes for s in (r.runtime_snapshot or {}).get("scenarios", []))]
+        development = {scene_identity(s) for s in prior_scenes}
+        if libero_v2:
+            validate_libero_final_scenes(runtime["scenarios"], prior_scenes)
+        elif any(scene_identity(s) in development for s in runtime["scenarios"]):
+            raise ValueError("最终评测场景与开发自测重复；更换标签或 seed 仍使用相同初态。")
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    except GatewayError as error:
+        return jsonify({"error": str(error)}), 403
+    if config["api"]["enabled"] and (not current_app.config.get("EVALUATION_API_KEY")
+            or not current_app.config.get("EVALUATION_API_URL", "").startswith("https://")):
+        return jsonify({"error": "请配置组织方最终评测 API 通道；最终评测不消耗参赛队伍额度。"}), 503
+    set_hash = digest(runtime)
+    config_hash = digest({"evaluation_config": config, "api_policy": final_api})
+    previous = EvaluationRun.query.filter_by(problem_id=problem.id, purpose="final").first()
+    if previous and any(previous.submission_snapshot.get(k) != v for k, v in {
+        "scene_set_version": label, "scene_set_sha256": set_hash, "final_config_sha256": config_hash}.items()):
+        return jsonify({"error": "同一赛题的最终评测须使用同一场景版本与预算。"}), 409
+    existing = final_run(version)
+    if existing and existing.status != "failed":
+        return jsonify({"error": "该作品已有最终评测记录。"}), 409
+    packages = [a for a in version.assets if a.original_name.lower().endswith(".zip")]
+    if len(packages) != 1:
+        return jsonify({"error": "exactly one .zip evaluation package is required"}), 409
+    package = packages[0]
+    path = Path(current_app.config["UPLOAD_FOLDER"]) / package.storage_name
+    if not path.is_file():
+        return jsonify({"error": "submission package is unavailable"}), 409
+    package_hash = package_digest(path)
+    assets = []
+    for asset in sorted(version.assets, key=lambda item: item.id):
+        asset_path = Path(current_app.config["UPLOAD_FOLDER"]) / asset.storage_name
+        if not asset_path.is_file():
+            return jsonify({"error": "submission material is unavailable"}), 409
+        assets.append({"id": asset.id, "name": asset.original_name, "sha256": package_digest(asset_path)})
+    version_hash = digest({"snapshot": {k: v for k, v in version.snapshot.items()
+        if k not in {"final_frozen_at", "final_evaluation_run_id"}}, "assets": assets})
+    development_run = db.session.get(EvaluationRun, version.snapshot.get("evaluation_run_id"))
+    if not development_run or development_run.submission_snapshot.get("package_sha256") != package_hash:
+        return jsonify({"error": "作品包与关联开发记录不一致。"}), 409
+    if existing and existing.submission_snapshot.get("package_sha256") != package_hash:
+        return jsonify({"error": "冻结作品包已变化。"}), 409
+    if existing and existing.submission_snapshot.get("version_sha256") != version_hash:
+        return jsonify({"error": "冻结作品说明或附件已变化。"}), 409
+    adapter = adapters()[config["adapter"]]
+    stamp = now_utc().isoformat()
+    frozen_at = version.snapshot.get("final_frozen_at", stamp)
+    run = EvaluationRun(problem=problem, submission_version=version, purpose="final", status="queued",
+        runtime_snapshot=deepcopy(runtime), config_snapshot={**deepcopy(config),
+            "metric_definitions": [m for m in adapter["metrics"] if m["key"] in config["metrics"]]},
+        submission_snapshot={"captured_at": version.snapshot["captured_at"], "asset_id": package.id,
+            "asset_name": package.original_name, "package_sha256": package_hash,
+            "frozen_at": frozen_at, "scene_set_version": label, "scene_set_sha256": set_hash,
+            "final_config_sha256": config_hash, "asset_manifest": assets,
+            "final_api_policy": final_api,
+            "version_sha256": version_hash,
+            **({"episode_weights": list(LIBERO_FINAL_WEIGHTS)} if libero_v2 else {}),
+            "performance_scoring": deepcopy((problem.scoring_config or {}).get("performance_scoring"))})
+    db.session.add(run)
+    db.session.flush()
+    version.snapshot = {**version.snapshot, "final_frozen_at": frozen_at, "final_evaluation_run_id": run.id}
+    audit("evaluation.final_started", "evaluation_run", run.id, {"scene_set_version": label,
+        "scene_set_sha256": set_hash, "package_sha256": package_hash})
+    db.session.commit()
+    return jsonify(run.to_dict()), 201
+
+
+@evaluations_bp.post("/evaluation-runs/<run_id>/publish")
+@require_user("admin", "organizer")
+def publish_final(run_id):
+    run = db.session.get(EvaluationRun, run_id)
+    if not run or run.purpose != "final" or run.status != "completed" or final_run(run.submission_version) != run:
+        return jsonify({"error": "当前作品的最终评测尚未完成。"}), 409
+    run.submission_snapshot = {**run.submission_snapshot, "results_published_at": now_utc().isoformat()}
+    audit("evaluation.final_published", "evaluation_run", run.id)
+    db.session.commit()
+    return jsonify(run.to_dict())
 
 
 @evaluations_bp.post("/evaluation-worker/claim")
@@ -276,6 +394,8 @@ def run_asset(run_id: str):
     asset = db.session.get(SubmissionAsset, run.submission_snapshot["asset_id"])
     if not asset or asset.submission_version_id != run.submission_version_id:
         return jsonify({"error": "evaluation asset unavailable"}), 404
+    if run.purpose == "final" and package_digest(Path(current_app.config["UPLOAD_FOLDER"]) / asset.storage_name) != run.submission_snapshot["package_sha256"]:
+        return jsonify({"error": "frozen submission package has changed"}), 409
     return send_from_directory(Path(current_app.config["UPLOAD_FOLDER"]), asset.storage_name, as_attachment=True, download_name=asset.original_name)
 
 
@@ -293,13 +413,20 @@ def proxy_api(run_id: str):
     grant = AIGrant.query.filter_by(team_id=team_id, problem_id=run.problem_id).first()
     if grant is None:
         grant = AIGrant.query.filter_by(team_id=team_id, problem_id=None).first()
-    if grant:
+    if grant and run.purpose != "final":
         if not policy["enabled"]:
             return jsonify({"error": "evaluation API is unavailable"}), 503
         try:
             return proxy(grant, request.get_json(silent=True), run=run)
         except GatewayError as error:
+            if error.code == "evaluation_limit":
+                db.session.refresh(run)
+                if run.api_calls_used >= policy["max_calls"]:
+                    run.submission_snapshot = {**run.submission_snapshot, "api_call_budget_exhausted": True}
+                    db.session.commit()
             return error_response(error)
+    if (run.purpose != "final" and (run.submission_snapshot.get("performance_scoring") or {}).get("preset") == "wujie-libero-v2"):
+        return jsonify({"error": "请在 API 平台开通本队 C 题额度。"}), 403
     upstream = current_app.config["EVALUATION_API_URL"]
     key = current_app.config["EVALUATION_API_KEY"]
     if not policy["enabled"] or not upstream or not key or not upstream.startswith("https://"):
@@ -307,8 +434,19 @@ def proxy_api(run_id: str):
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return jsonify({"error": "evaluation API expects a JSON object"}), 400
-    encoded = json.dumps(payload).encode("utf-8")
-    if len(encoded) > 65536:
+    final_api = run.submission_snapshot.get("final_api_policy") if run.purpose == "final" else None
+    if run.purpose == "final":
+        if not final_api:
+            return jsonify({"error": "final API policy is unavailable"}), 503
+        try:
+            payload = validate_api_body(payload, final_api)
+        except GatewayError as error:
+            return error_response(error)
+    encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    request_limit = final_api["max_request_bytes"] if final_api else 65536
+    response_limit = final_api["max_response_bytes"] if final_api else 1024 * 1024
+    timeout = final_api["timeout_seconds"] if final_api else 30
+    if len(encoded) > request_limit:
         return jsonify({"error": "evaluation API request is too large"}), 413
     updated = db.session.execute(update(EvaluationRun).where(
         EvaluationRun.id == run.id, EvaluationRun.status == "running",
@@ -317,18 +455,65 @@ def proxy_api(run_id: str):
     ).values(api_calls_used=EvaluationRun.api_calls_used + 1))
     db.session.commit()
     if not updated.rowcount:
+        run.submission_snapshot = {**run.submission_snapshot, "api_call_budget_exhausted": True}
+        db.session.commit()
         return jsonify({"error": "evaluation API call limit reached"}), 429
     upstream_request = urllib.request.Request(upstream, data=encoded, headers={
         "Authorization": "Bearer " + key, "Content-Type": "application/json",
     }, method="POST")
+    started = time.monotonic()
+    call_record = {"call_index": run.api_calls_used, "model": payload.get("model"),
+                   "request_bytes": len(encoded), "response_bytes": 0,
+                   "upstream_status": None, "outcome": "upstream_unavailable"}
     try:
-        with urllib.request.build_opener(NoRedirect).open(upstream_request, timeout=30) as response:
-            result = response.read(1024 * 1024 + 1)
-            if len(result) > 1024 * 1024:
+        with urllib.request.build_opener(NoRedirect).open(upstream_request, timeout=timeout) as response:
+            call_record["upstream_status"] = getattr(response, "status", 200)
+            result = response.read(response_limit + 1)
+            call_record["response_bytes"] = len(result)
+            if len(result) > response_limit:
+                call_record["outcome"] = "response_too_large"
                 return jsonify({"error": "evaluation API response is too large"}), 502
+            call_record["outcome"] = "completed"
             return current_app.response_class(result, status=200, content_type="application/json")
-    except (urllib.error.URLError, TimeoutError, ValueError):
+    except urllib.error.HTTPError as error:
+        call_record.update(upstream_status=error.code, outcome="upstream_http_error")
+        error.close()
         return jsonify({"error": "evaluation API upstream unavailable"}), 502
+    except (urllib.error.URLError, TimeoutError, ValueError) as error:
+        call_record["outcome"] = "upstream_timeout" if isinstance(error, TimeoutError) or isinstance(getattr(error, "reason", None), TimeoutError) else "upstream_unavailable"
+        return jsonify({"error": "evaluation API upstream unavailable"}), 502
+    finally:
+        if run.purpose == "final":
+            call_record["elapsed_ms"] = round((time.monotonic() - started) * 1000, 3)
+            audit("evaluation.final_api_call", "evaluation_run", run.id, call_record)
+            db.session.commit()
+
+
+def validate_partial_results(run, partial):
+    """Completed LIBERO scenes are diagnostics, never a shortened scored run."""
+    if run.config_snapshot["adapter"] != "libero-agent-v1":
+        raise ValueError("partial results are only supported for LIBERO")
+    if not isinstance(partial, dict) or set(partial) != {"episodes", "planned_episodes", "interrupted_scene", "reason"}:
+        raise ValueError("invalid partial results")
+    planned = run.config_snapshot["resources"]["episodes"]
+    scenes = (run.runtime_snapshot or {}).get("scenarios", [])
+    episodes = partial["episodes"]
+    if (type(partial["planned_episodes"]) is not int or partial["planned_episodes"] != planned
+            or len(scenes) != planned or not isinstance(episodes, list) or len(episodes) > planned):
+        raise ValueError("partial episode count does not match frozen config")
+    if partial["reason"] not in ("evaluation_time_limit", "execution_error"):
+        raise ValueError("invalid interruption reason")
+    stored = []
+    for index, item in enumerate(episodes):
+        expected = {key: scenes[index][key] for key in ("id", "label", "difficulty")}
+        if not isinstance(item, dict) or set(item) != {"scenario", "metrics"} or item["scenario"] != expected:
+            raise ValueError("partial result scenario does not match frozen scene manifest")
+        stored.append({"scenario": expected, "metrics": validate_metrics(run.config_snapshot, item["metrics"])})
+    interrupted = partial["interrupted_scene"]
+    if interrupted is not None:
+        if len(stored) >= planned or interrupted != {key: scenes[len(stored)][key] for key in ("id", "label", "difficulty")}:
+            raise ValueError("interrupted scenario does not match frozen scene manifest")
+    return {"episodes": stored, "planned_episodes": planned, "interrupted_scene": interrupted, "reason": partial["reason"]}
 
 
 @evaluations_bp.post("/evaluation-worker/runs/<run_id>/complete")
@@ -343,6 +528,20 @@ def complete_run(run_id: str):
         db.session.commit()
         return jsonify({"error": "submission has changed"}), 409
     data = request.get_json(silent=True) or {}
+    partial = None
+    if "partial_results" in data:
+        if data.get("status") != "failed" or data.get("failure_kind") == "infrastructure_before_execution":
+            return jsonify({"error": "partial results require an interrupted execution"}), 400
+        try:
+            partial = validate_partial_results(run, data["partial_results"])
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
+    if (data.get("status") == "failed" and partial is not None and data.get("budget_episodes") is not None
+            and (run.submission_snapshot.get("performance_scoring") or {}).get("preset") == "wujie-libero-v2"
+            and (partial["reason"] == "evaluation_time_limit" or run.submission_snapshot.get("api_call_budget_exhausted"))):
+        reason = "evaluation_time_limit" if partial["reason"] == "evaluation_time_limit" else "api_call_limit"
+        run.submission_snapshot = {**run.submission_snapshot, "budget_termination_reason": reason}
+        data = {"status": "completed", "episodes": data["budget_episodes"]}
     if (data.get("status") == "failed" and data.get("failure_kind") == "infrastructure_before_execution"
             and run.judge_pool_id and run.purpose == "trial" and not run.quota_refunded):
         # Only the authenticated trusted controller receives the lease. This
@@ -359,6 +558,10 @@ def complete_run(run_id: str):
     if data.get("status") == "failed":
         run.status = "failed"
         run.error = str(data.get("error", "evaluation failed"))[:500]
+        run.metrics = {}
+        run.episodes = partial["episodes"] if partial else []
+        if partial:
+            run.submission_snapshot = {**run.submission_snapshot, "partial_results": partial}
     elif data.get("status") == "completed":
         episodes = data.get("episodes")
         if not isinstance(episodes, list) or len(episodes) != run.config_snapshot["resources"]["episodes"]:
@@ -367,6 +570,11 @@ def complete_run(run_id: str):
             readings = []
             stored_episodes = []
             for index, item in enumerate(episodes):
+                if run.purpose == "final":
+                    expected = {key: run.runtime_snapshot["scenarios"][index][key]
+                                for key in ("id", "label", "difficulty")}
+                    if not isinstance(item, dict) or item.get("scenario") != expected:
+                        raise ValueError("final result scenario does not match frozen scene manifest")
                 if isinstance(item, dict) and set(item) in (
                         {"scenario", "metrics"}, {"scenario", "metrics", "objectives"}):
                     scenario = item["scenario"]
@@ -403,6 +611,10 @@ def complete_run(run_id: str):
                         "metrics": metrics,
                     })
                 readings.append(metrics)
+            from ..performance_scoring import performance_result
+            performance_result(run.submission_snapshot.get("performance_scoring"),
+                               run.config_snapshot["adapter"], stored_episodes,
+                               run.submission_snapshot.get("episode_weights"))
         except ValueError as error:
             return jsonify({"error": str(error)}), 400
         run.episodes = stored_episodes

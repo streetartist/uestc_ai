@@ -24,8 +24,9 @@ def build_catalogue(images: dict | None = None):
             "launch": {"require_ready": True, "rules_version": "wujie-2026-v2"},
             "checkpoints": [{"id": f"checkpoint-{i}", "label": label, "due_at": None}
                             for i, label in enumerate(["首次跑通", "方案迭代", "提交预演"], 1)],
-            "scoring_stages": {"performance_percent": 80, "report_percent": 20,
-                               "first_stage_percent": 50, "defense_percent": 50}},
+            "scoring_stages": {"performance_percent": 100 * 5 / 6, "report_percent": 100 / 6,
+                               "first_stage_percent": 60, "defense_percent": 40,
+                               "final_weights": {"performance": 50, "report": 10, "defense": 40}}},
     }
     readme = (SOURCE / "technical-route.md").read_text(encoding="utf-8")
     classification = {
@@ -75,28 +76,36 @@ def build_catalogue(images: dict | None = None):
                 problem["source_url"] = "https://github.com/Lifelong-Robot-Learning/LIBERO"
                 problem["summary"] = "在 LIBERO 公布的抓取放置、物体操作与组合任务中，优化自定义策略或智能体 harness。"
                 problem["evaluation_config"].update(adapter="libero-agent-v1", task="manipulation",
-                    metrics=["task_success", "action_count", "execution_seconds", "invalid_actions"])
-                problem["compute_note"] = "LIBERO / Panda，选手程序4CPU、2GiB内存，独立仿真环境3GiB；无GPU，每队3次自测、单次1800秒；三个任务600/600/1000步，最多300次模型调用。"
+                    metrics=["task_success", "action_count", "execution_seconds", "invalid_actions",
+                             "completion_score", "efficiency_score", "automatic_score"])
+                problem["compute_note"] = "LIBERO / Panda，选手程序4CPU、2GiB内存，独立仿真环境3GiB，无GPU。开发三题1800秒、300次API调用；最终五题7200秒、500次调用。参考步数300/300/600/700/1100。"
             else:
                 problem["compute_note"] = "MineDojo，选手程序4CPU、2GiB内存，独立环境4GiB；无GPU，每队3次自测、整次3600秒，三档600/1500/3000步，最多300次模型调用。"
             # A model channel is required for these LLM tracks; do not silently fall back to unrestricted networking.
             problem["evaluation_config"]["api"] = {"enabled": True, "max_calls": 300}
         problem["status"] = "draft"
-        problem["statement_md"] += "\n\n" + SCORING
-        problem["judging_schema"] = {"rubric": {"模型或智能体实际表现": .8, "技术路线说明": .2}}
-        problem["scoring_config"] = {"external_weight_percent": 50, "review_score_mode": "weighted", "external_score_label": "现场答辩",
-            "online_score_label": "第一阶段", "stages": competition["config"]["scoring_stages"],
+        rules = (SOURCE / "libero-rules.md").read_text(encoding="utf-8") if runtime_key == "robot-arm" else SCORING
+        problem["statement_md"] += "\n\n" + rules
+        problem["judging_schema"] = {"rubric": {"模型或智能体实际表现": 5 / 6, "技术路线说明": 1 / 6}}
+        problem["scoring_config"] = {"external_weight_percent": 40, "review_score_mode": "weighted", "external_score_label": "现场答辩",
+            "online_score_label": "测评与报告", "stages": competition["config"]["scoring_stages"],
+            "report_rubric": {"方案设计": .3, "实现与复现": .3, "结果与局限分析": .3, "引用与团队贡献": .1},
+            "defense_rubric": {"方案介绍": .3, "运行演示": .3, "现场问答": .4},
             "performance_scoring": {"preset": "wujie-world-v1" if runtime_key == "minecraft" else "wujie-libero-v1" if runtime_key else "wujie-depth-v1", "criterion": "模型或智能体实际表现"}}
+        if runtime_key == "robot-arm":
+            problem["scoring_config"].update(final_evaluation_required=True, external_weight_percent=40,
+                code_review_mode="pass_fail",
+                performance_scoring={"preset": "wujie-libero-v2", "criterion": "模型或智能体实际表现"})
         setup = {"evaluation_config": deepcopy(problem["evaluation_config"])}
         if runtime_key and images:
             from evaluation_adapters.minecraft_runner import validate_scenarios as validate_mc
             from evaluation_adapters.libero_runner import validate_scenarios as validate_robot
-            from evaluation_adapters.wujie_scenes import minecraft_scenes, libero_scenes
+            from evaluation_adapters.wujie_scenes import minecraft_scenes, libero_scored_scenes
             if runtime_key == "minecraft":
                 scenes = minecraft_scenes([secrets.randbelow(2**31) for _ in range(3)])
                 validate_mc(scenes, 3)
             else:
-                scenes = libero_scenes([20, 21, 22], [secrets.randbelow(2**31) for _ in range(3)])
+                scenes = libero_scored_scenes()
                 validate_robot(scenes, 3)
             pair = images[runtime_key]
             setup["runtime"] = {"image": pair["controller"], "agent_image": pair["agent"], "scenarios": scenes}

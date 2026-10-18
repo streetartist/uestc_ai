@@ -56,7 +56,7 @@ class ModelClient:
     def _fail(self, code, message):
         raise ModelResponseError(code, message, self.last_response)
 
-    def chat(self, text, images=()):
+    def chat(self, text, images=(), *, json_mode=False, thinking=None, reasoning_effort=None):
         self.last_response = {"http_status": None, "request_id": None,
                               "finish_reason": None, "usage": {}}
         endpoint = os.environ.get("EVALUATION_API_URL")
@@ -73,6 +73,13 @@ class ModelClient:
         content += [{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + image}} for image in images]
         payload = {"model": self.model, "messages": [{"role": "user", "content": content}],
                    "max_tokens": self.max_output_tokens, "stream": False}
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
+            content[0]["text"] = "Return valid JSON.\n" + text
+        if thinking is not None:
+            payload["thinking"] = {"type": "enabled" if thinking else "disabled"}
+        if reasoning_effort is not None:
+            payload["reasoning_effort"] = reasoning_effort
         request = urllib.request.Request(endpoint, data=json.dumps(payload).encode(),
             headers={**headers, "Content-Type": "application/json"}, method="POST")
         try:
@@ -85,7 +92,7 @@ class ModelClient:
                                       request_id=_request_id(error.headers))
             error.close()
             self._fail("http_error", f"模型调用失败 HTTP {error.code}；检查额度、允许模型和参数。"
-                       f"本次 max_output_tokens={self.max_output_tokens}，须在 API 平台本队本题额度的单次输出上限内。")
+                       f"本次 max_output_tokens={self.max_output_tokens}，须在 API 平台 → 用量概览 → 本题队伍配额的单次输出上限内。")
         except (urllib.error.URLError, OSError, TimeoutError):
             self._fail("transport_error", "模型请求连接失败或超时；核对网络与平台请求记录后再决定是否重试。")
         # A request can be billed even if its response is empty or interrupted.

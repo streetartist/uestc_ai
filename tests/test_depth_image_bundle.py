@@ -13,10 +13,20 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from build_depth_competition_image_bundle import build
 import build_classification_package
-from build_wujie_starters import build as build_starters
+from build_wujie_starters import build as build_starters, write_source
 
 
 class DepthImageBundleTests(unittest.TestCase):
+    def test_starter_sources_have_portable_newlines(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "START.md"
+            source.write_bytes("说明\r\n\r\n运行\r\n".encode("utf-8"))
+            target = io.BytesIO()
+            with zipfile.ZipFile(target, "w") as archive:
+                write_source(archive, source, "START.md")
+            with zipfile.ZipFile(target) as archive:
+                self.assertEqual(archive.read("START.md"), "说明\n\n运行\n".encode("utf-8"))
+
     def test_all_three_public_starters_are_complete_without_judge_data(self):
         with tempfile.TemporaryDirectory() as directory:
             packages = build_starters(Path(directory))
@@ -40,8 +50,13 @@ class DepthImageBundleTests(unittest.TestCase):
                         self.assertIn("允许的模型名称", config["model"])
                         explanation = archive.read("CONFIG.md").decode()
                         self.assertIn("/api-platform", explanation)
-                        self.assertIn('memory: "same-test-only"', explanation)
-                        self.assertIn("平台不读取或校验它", explanation)
+                        if "arm" in package.name:
+                            self.assertIn("reset(goal)", explanation)
+                            self.assertIn("清空该场景的记忆", explanation)
+                            self.assertIn("UESTC_MODEL_API_KEY", explanation)
+                        else:
+                            self.assertIn('memory: "same-test-only"', explanation)
+                            self.assertIn("平台不读取或校验它", explanation)
                         # Compare contents rather than ZIP timestamps, so the
                         # downloadable artifact cannot lag behind its sources.
                         published = Path(__file__).resolve().parents[1] / "public/downloads" / package.name

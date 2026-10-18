@@ -153,4 +153,4 @@ worker/                      Cloudflare Worker 入口
 
 软件代码采用 [MIT License](LICENSE)。电子科技大学名称、校徽及其他学校标识不随代码许可证授权，详见 [资产与标识许可](ASSET_LICENSES.md)。
 
-机械臂仿真、可导入题目包与 Docker 验收见 [Panda 机械臂测评](backend/robot_arm_benchmark.md)。
+机械臂仿真、可导入题目包与 Docker 验收见 [Panda 机械臂测评](backend/robot_arm_benchmark.md)。无界杯 C 题的五题计分、开发包、独立终评及发布步骤见 [LIBERO 五题版本接入](docs/libero-v2-activation.md)。

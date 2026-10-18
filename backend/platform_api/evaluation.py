@@ -16,9 +16,12 @@ ADAPTERS = {
         "tasks": ["manipulation"],
         "metrics": [
             {"key": "task_success", "label": "任务成功率", "unit": "%", "direction": "max", "min": 0, "max": 100},
-            {"key": "action_count", "label": "控制步数", "unit": "count", "direction": "min", "min": 0, "max": 2000},
+            {"key": "action_count", "label": "控制步数", "unit": "count", "direction": "min", "min": 0, "max": 4000},
             {"key": "execution_seconds", "label": "执行耗时", "unit": "s", "direction": "min", "min": 0, "max": 14400},
-            {"key": "invalid_actions", "label": "无效动作数", "unit": "count", "direction": "min", "min": 0, "max": 2000},
+            {"key": "invalid_actions", "label": "无效动作数", "unit": "count", "direction": "min", "min": 0, "max": 4000},
+            {"key": "completion_score", "label": "完成分", "unit": "分", "direction": "max", "min": 0, "max": 60},
+            {"key": "efficiency_score", "label": "效率分", "unit": "分", "direction": "max", "min": 0, "max": 40},
+            {"key": "automatic_score", "label": "场景总分", "unit": "分", "direction": "max", "min": 0, "max": 100},
         ],
     },
     "minecraft-agent-v1": {

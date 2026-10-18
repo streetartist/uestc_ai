@@ -40,6 +40,10 @@ def validate_scoring_config(value) -> dict:
     if not isinstance(value, dict):
         raise ValueError("scoring_config must be an object")
     config = dict(value)
+    if config.get("code_review_mode") not in (None, "pass_fail"):
+        raise ValueError("invalid code review mode")
+    if "final_evaluation_required" in config and type(config["final_evaluation_required"]) is not bool:
+        raise ValueError("final_evaluation_required must be a boolean")
     raw_weight = config.get("external_weight_percent", 0)
     try:
         weight = float(raw_weight)
@@ -111,6 +115,9 @@ def review_score(version: SubmissionVersion) -> dict[str, float | int | None] | 
     by_reviewer = {review.reviewer_id: review for review in reviews}
     if set(by_reviewer) != expected_ids:
         return None
+    if (version.submission.problem.scoring_config or {}).get("code_review_mode") == "pass_fail":
+        if any(review.scores.get("__code_review_passed") != 1 for review in reviews):
+            return None
     total = sum(float(by_reviewer[reviewer_id].total_score or 0) * weights[reviewer_id] / 100 for reviewer_id in expected_ids)
     return {
         "total_score": total,

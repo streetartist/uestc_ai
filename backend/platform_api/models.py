@@ -423,20 +423,31 @@ class EvaluationRun(TimestampMixin, db.Model):
     def to_dict(self):
         from .performance_scoring import performance_result
         from .judge import run_dispatch_status
+        from .final_evaluation import required as final_required
         performance = performance_result(self.submission_snapshot.get("performance_scoring"),
-            self.config_snapshot["adapter"], self.episodes) if self.status == "completed" else None
+            self.config_snapshot["adapter"], self.episodes,
+            self.submission_snapshot.get("episode_weights")) if self.status == "completed" else None
         return {
             "id": self.id, "problem_id": self.problem_id, "submission_version_id": self.submission_version_id,
             "adapter": self.config_snapshot["adapter"], "status": self.status, "attempts": self.attempts,
             "purpose": self.purpose, "submission_id": self.submission_version.submission_id,
+            "result_scope": "final" if self.purpose == "final" else "development" if self.purpose == "trial" and final_required(self.problem) else "submission",
+            "scene_set_version": self.submission_snapshot.get("scene_set_version"),
+            "scene_set_sha256": self.submission_snapshot.get("scene_set_sha256"),
+            "frozen_at": self.submission_snapshot.get("frozen_at"),
+            "version_sha256": self.submission_snapshot.get("version_sha256"),
+            "final_config_sha256": self.submission_snapshot.get("final_config_sha256"),
             "quota_refunded": self.quota_refunded, "dispatch": run_dispatch_status(self),
+            "budget_termination_reason": self.submission_snapshot.get("budget_termination_reason"),
             "package_name": self.submission_snapshot.get("asset_name"),
             "package_sha256": self.submission_snapshot.get("package_sha256"),
             "metrics": self.metrics, "episodes": self.episodes, "error": self.error,
+            "partial_results": self.submission_snapshot.get("partial_results") if self.status == "failed" else None,
               "artifacts": [artifact.to_dict() for artifact in self.artifacts if not artifact.name.endswith('.log')],
             "performance": performance,
             "metric_definitions": self.config_snapshot.get("metric_definitions", []),
             "api_calls_used": self.api_calls_used,
+            "api_calls_limit": self.config_snapshot["api"]["max_calls"],
             "time_seconds": self.config_snapshot["resources"]["time_seconds"],
             "created_at": iso(self.created_at), "started_at": iso(self.started_at),
             "finished_at": iso(self.finished_at),

@@ -95,6 +95,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         EVALUATION_ENABLED_ADAPTERS=os.environ.get("EVALUATION_ENABLED_ADAPTERS", ""),
         EVALUATION_API_URL=os.environ.get("EVALUATION_API_URL", ""),
         EVALUATION_API_KEY=os.environ.get("EVALUATION_API_KEY", ""),
+        EVALUATION_FINAL_API_POLICY=os.environ.get("EVALUATION_FINAL_API_POLICY_JSON", "{}"),
         EVALUATION_API_ORIGIN_IP=os.environ.get("EVALUATION_API_ORIGIN_IP", ""),
         AI_GATEWAY_ENCRYPTION_KEY=os.environ.get("AI_GATEWAY_ENCRYPTION_KEY", ""),
         MAIL_ENCRYPTION_KEY=os.environ.get("MAIL_ENCRYPTION_KEY")

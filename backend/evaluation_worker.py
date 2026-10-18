@@ -95,6 +95,44 @@ def pinned_image(image: str) -> bool:
     return bool(re.fullmatch(r"(?:[^\s]+@)?sha256:[a-f0-9]{64}", image))
 
 
+def recover_libero_progress(base, job, output, reason):
+    """Preserve trusted completed scenes without promoting a partial run to a score."""
+    path = output / "partial-results.json"
+    if not path.is_file() or path.stat().st_size > 256 * 1024:
+        return None
+    progress = json.loads(path.read_text(encoding="utf-8"))
+    if (not isinstance(progress, dict) or not isinstance(progress.get("episodes"), list)
+            or progress.get("planned_episodes") != job["config"]["resources"]["episodes"]
+            or len(progress["episodes"]) > progress["planned_episodes"]):
+        return None
+    if progress.get("reason") == "evaluation_time_limit":
+        reason = "evaluation_time_limit"
+    progress["reason"] = reason
+    # Update the retained file with the outer budget/worker termination reason.
+    path.write_text(json.dumps(progress, allow_nan=False), encoding="utf-8")
+    for index in range(1, progress["planned_episodes"] + 1):
+        evidence = output / "evidence" / str(index)
+        trajectory = evidence / "trajectory.json"
+        journal = evidence / "trajectory-steps.jsonl"
+        if not trajectory.is_file() and journal.is_file() and journal.stat().st_size <= 8 * 1024 * 1024:
+            steps = []
+            for line in journal.read_text(encoding="utf-8").splitlines():
+                try:
+                    steps.append(json.loads(line))
+                except ValueError:
+                    break  # A forced stop can leave the final journal line incomplete.
+            trajectory.write_text(json.dumps({"steps": steps, "status": "interrupted",
+                "interruption": reason}), encoding="utf-8")
+        for filename in ("trajectory.json", "replay.gif", "replay.mp4"):
+            evidence_file = evidence / filename
+            if evidence_file.is_file():
+                try:
+                    upload_evidence_file(base, job, f"scene-{index}-{filename}", evidence_file)
+                except (OSError, ValueError, RuntimeError) as error:
+                    print(f"LIBERO partial evidence {index}/{filename}: {type(error).__name__}", file=sys.stderr)
+    return progress
+
+
 def execute_isolated_agent(base: str, job: dict, trusted_image: str, agent_image: str,
                       scenarios_path: str, proxy_url: str, network: str, log_directory: str = "", logs=None):
     config = job["config"]
@@ -236,7 +274,42 @@ def execute_isolated_agent(base: str, job: dict, trusted_image: str, agent_image
                 for index in range(1, resources["episodes"] + 1):
                     for filename in ("replay.gif", "trajectory.json"):
                         upload_evidence_file(base, job, f"scene-{index}-{filename}", output / "evidence" / str(index) / filename)
+                    video = output / "evidence" / str(index) / "replay.mp4"
+                    if config["adapter"] == "libero-agent-v1" and video.is_file():
+                        try:
+                            upload_evidence_file(base, job, f"scene-{index}-replay.mp4", video)
+                        except (OSError, ValueError, RuntimeError) as error:
+                            # The controller's scores are already complete. The
+                            # existing finally block retains evidence in log_path.
+                            message = f"场景 {index} 视频上传失败，测评成绩保留（{type(error).__name__}）。"
+                            print(message, file=sys.stderr, flush=True)
+                            if logs:
+                                logs.event(message)
             return {"status": "completed", "episodes": result["episodes"]}
+        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+            if config["adapter"] != "libero-agent-v1":
+                raise
+            # Stop policy execution at the existing overall deadline. Give only
+            # the trusted controller cleanup time to close video and checkpoints.
+            for command, timeout in ((["docker", "kill", agent_name], 5),
+                                     (["docker", "stop", "--time", "25", trusted_name], 30)):
+                try:
+                    subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                   timeout=timeout, check=False)
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
+            reason = "evaluation_time_limit" if isinstance(error, subprocess.TimeoutExpired) and time.monotonic() >= deadline else "execution_error"
+            try:
+                partial = recover_libero_progress(base, job, output, reason)
+            except (OSError, ValueError):
+                partial = None
+            if partial is None:
+                raise
+            from libero_budget import budget_episodes
+            settled = budget_episodes(job, partial, output)
+            return {"status": "failed", "error": "evaluation time limit exceeded" if reason == "evaluation_time_limit"
+                    else str(error)[:400], "partial_results": partial,
+                    **({"budget_episodes": settled} if settled is not None else {})}
         finally:
             if logs:
                 logs.event('停止并清理选手与环境容器')
@@ -275,6 +348,8 @@ def execute_isolated_agent(base: str, job: dict, trusted_image: str, agent_image
             thread.join(timeout=2)
             if log_directory and (output / "evidence").is_dir():
                 shutil.copytree(output / "evidence", log_path / "evidence", dirs_exist_ok=True)
+                if (output / "partial-results.json").is_file():
+                    shutil.copyfile(output / "partial-results.json", log_path / "partial-results.json")
 
 
 def execute_minecraft(base, job, trusted_image, agent_image, scenarios_path, proxy_url, network, log_directory="", logs=None):

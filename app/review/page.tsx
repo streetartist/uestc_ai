@@ -42,21 +42,25 @@ function ReviewForm({ item, onSaved }: { item: ReviewQueueItem; onSaved: (review
   const toast = useToast();
   const rubric = useMemo(() => item.problem.judging_schema.rubric ?? {}, [item.problem.judging_schema.rubric]);
   const performance = item.evaluation?.performance;
+  const passFail = item.problem.scoring_config.code_review_mode === "pass_fail";
+  const [codePassed, setCodePassed] = useState(item.my_review?.scores?.__code_review_passed === 1 ? "pass" : item.my_review?.scores?.__code_review_passed === 0 ? "fail" : "");
   const [scores, setScores] = useState<Record<string, number>>(
-    { ...(item.my_review?.scores ?? Object.fromEntries(Object.keys(rubric).map((key) => [key, 0]))), ...(performance ? { [performance.criterion]: performance.score } : {}) },
+    { ...Object.fromEntries(Object.keys(rubric).map((key) => [key, 0])), ...(item.my_review?.scores ?? {}), ...(performance ? { [performance.criterion]: performance.score } : {}) },
   );
   const [feedback, setFeedback] = useState(item.my_review?.feedback_md ?? "");
   const [formError, setFormError] = useState("");
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [saving, setSaving] = useState(false);
   const weighted = item.problem.scoring_config.review_score_mode === "weighted";
+  const onlineWeight = 100 - (item.problem.scoring_config.external_weight_percent ?? 0);
   const total = useMemo(() => Object.entries(scores).reduce((sum, [key, value]) => sum + Number(value || 0) * (weighted ? rubric[key] ?? 0 : 1), 0), [scores, weighted, rubric]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setFormError(""); setSavedAt(null); setSaving(true);
     try {
-      const result = await api<{ id: string; status: string; total_score: number; scores: Record<string, number> }>("/reviews", { method: "POST", ...jsonBody({ submission_version_id: item.id, scores, total_score: total, feedback_md: feedback, status: "submitted" }) });
+      if (passFail && !codePassed) throw new Error("请选择代码审阅结果。");
+      const result = await api<{ id: string; status: string; total_score: number; scores: Record<string, number> }>("/reviews", { method: "POST", ...jsonBody({ submission_version_id: item.id, scores, total_score: total, feedback_md: feedback, status: "submitted", ...(passFail ? { code_review_passed: codePassed === "pass" } : {}) }) });
       const review = { id: result.id, scores: result.scores, total_score: result.total_score, feedback_md: feedback, status: result.status };
       setSavedAt(new Date());
       onSaved(review);
@@ -66,16 +70,28 @@ function ReviewForm({ item, onSaved }: { item: ReviewQueueItem; onSaved: (review
   }
 
   if (item.problem.evaluation_config?.adapter && item.evaluation?.status !== "completed") {
-    return <section className="review-form"><header><span>评分表</span><strong>等待指标</strong></header><p role="status">{item.evaluation?.status === "failed" ? "评测失败，本次没有有效指标。请由组织者核查运行环境或参赛者重新提交，完成评测后再评分。" : "自动评测尚未完成。指标生成后，再结合研究报告与代码提交评审。"}</p><small>可先阅读材料，点击工作台“刷新评测结果”查看最新状态。</small></section>;
+    return <section className="review-form"><header><span>评分表</span><strong>等待指标</strong></header><p role="status">{item.problem.scoring_config.final_evaluation_required ? item.evaluation?.status === "failed" ? "最终评测失败，等待组织方核查并重跑冻结作品。" : "最终评测尚未完成。可先审阅代码、技术路线与开发记录。" : item.evaluation?.status === "failed" ? "评测失败，本次没有有效指标。请由组织者核查运行环境或参赛者重新提交，完成评测后再评分。" : "自动评测尚未完成。指标生成后，再结合研究报告与代码提交评审。"}</p><small>可先阅读材料，点击工作台“刷新评测结果”查看最新状态。</small></section>;
   }
 
-  return <form className={`review-form ${item.review_locked ? "is-locked" : ""}`} onSubmit={submit} noValidate><header><span>评分表</span><strong>{total.toFixed(1)}</strong></header>{item.review_locked && <div className="review-locked-note" role="status"><LockKeyhole size={15} /><span><strong>在线评分已锁定</strong><small>当前记录仅供查看，组织者解锁后才能修改。</small></span></div>}{Object.entries(rubric).map(([key, weight]) => <label className="score-field" key={key}><span><strong>{key}</strong><small>{weighted ? "计分权重" : "建议权重"} {Math.round(weight * 100)}%{performance?.criterion === key ? " · 平台自动计分" : ""}</small></span><input type="number" min="0" max="100" step="0.5" disabled={item.review_locked || performance?.criterion === key} value={scores[key] ?? 0} onChange={(event) => { setSavedAt(null); setScores((current) => ({ ...current, [key]: Number(event.target.value) })); }} /></label>)}<label className="form-field"><span>评审意见</span><textarea value={feedback} disabled={item.review_locked} onChange={(event) => { setSavedAt(null); setFeedback(event.target.value); }} rows={7} /></label><FieldError>{formError}</FieldError>{savedAt && <div className="review-save-success" role="status"><Check size={15} /><span><strong>评审已保存</strong><small>{formatBeijing(savedAt, { hour: "2-digit", minute: "2-digit" })} · 已同步到评审记录</small></span></div>}<button className="primary-button form-submit" disabled={saving || item.review_locked}>{item.review_locked ? <LockKeyhole size={15} /> : <Save size={15} />}{item.review_locked ? "评分已锁定" : saving ? "正在保存" : "保存评审"}</button></form>;
+  return <form className={`review-form ${item.review_locked ? "is-locked" : ""}`} onSubmit={submit} noValidate>
+    <header><span>在线评审</span><strong>{weighted ? `${(total * onlineWeight / 100).toFixed(1)} / ${onlineWeight}` : total.toFixed(1)}</strong></header>
+    {item.review_locked && <div className="review-locked-note" role="status"><LockKeyhole size={15} /><span><strong>在线评分已锁定</strong><small>当前记录仅供查看，组织者解锁后才能修改。</small></span></div>}
+    {passFail && <label className="form-field"><span>代码审阅</span><select value={codePassed} disabled={item.review_locked} onChange={(event) => { setSavedAt(null); setCodePassed(event.target.value); }} required><option value="">请选择</option><option value="pass">通过</option><option value="fail">不通过</option></select></label>}
+    {Object.entries(rubric).map(([key, weight]) => <label className="score-field" key={key}>
+      <span><strong>{key}</strong><small>{weighted ? `计入总成绩 ${(weight * onlineWeight).toFixed(2).replace(/\.?0+$/, "")} 分` : `建议权重 ${Math.round(weight * 100)}%`}{performance?.criterion === key ? " · 平台自动计分" : ""}</small></span>
+      <input type="number" min="0" max="100" step="0.5" disabled={item.review_locked || performance?.criterion === key} value={scores[key] ?? 0} onChange={(event) => { setSavedAt(null); setScores((current) => ({ ...current, [key]: Number(event.target.value) })); }} />
+    </label>)}
+    <label className="form-field"><span>评审意见</span><textarea value={feedback} disabled={item.review_locked} required={passFail && codePassed === "fail"} onChange={(event) => { setSavedAt(null); setFeedback(event.target.value); }} rows={7} /></label>
+    <FieldError>{formError}</FieldError>
+    {savedAt && <div className="review-save-success" role="status"><Check size={15} /><span><strong>评审已保存</strong><small>{formatBeijing(savedAt, { hour: "2-digit", minute: "2-digit" })} · 已同步到评审记录</small></span></div>}
+    <button className="primary-button form-submit" disabled={saving || item.review_locked}>{item.review_locked ? <LockKeyhole size={15} /> : <Save size={15} />}{item.review_locked ? "评分已锁定" : saving ? "正在保存" : "保存评审"}</button>
+  </form>;
 }
 
 function ReviewMaterials({ item }: { item: ReviewQueueItem }) {
   const fields = Object.entries(item.fields ?? {}).filter(([, value]) => String(value).trim());
   const assets = item.assets ?? [];
-  return <><EvaluationMetrics config={item.problem.evaluation_config} run={item.evaluation} />{(fields.length > 0 || assets.length > 0) && <section className="review-materials"><header><span>SUBMITTED MATERIALS</span><strong>作品材料</strong></header>{fields.length > 0 && <dl>{fields.map(([key, rawValue]) => { const value = String(rawValue); return <div key={key}><dt>{fieldLabels[key] ?? key}</dt><dd>{isUrl(value) ? <a href={value} target="_blank" rel="noreferrer"><span>{value}</span><ExternalLink size={14} /></a> : value}</dd></div>; })}</dl>}{assets.length > 0 && <div className="review-assets">{assets.map((asset) => <a href={assetUrl(asset.id)} key={asset.id}><FileText size={15} /><span><strong>{asset.original_name}</strong><small>{formatBytes(asset.size)}</small></span><Download size={14} /></a>)}</div>}</section>}</>;
+  return <>{item.development_evaluation && <EvaluationMetrics config={item.problem.evaluation_config} run={item.development_evaluation} />}<EvaluationMetrics config={item.problem.evaluation_config} run={item.evaluation} />{(fields.length > 0 || assets.length > 0) && <section className="review-materials"><header><span>SUBMITTED MATERIALS</span><strong>作品材料</strong></header>{fields.length > 0 && <dl>{fields.map(([key, rawValue]) => { const value = String(rawValue); return <div key={key}><dt>{fieldLabels[key] ?? key}</dt><dd>{isUrl(value) ? <a href={value} target="_blank" rel="noreferrer"><span>{value}</span><ExternalLink size={14} /></a> : value}</dd></div>; })}</dl>}{assets.length > 0 && <div className="review-assets">{assets.map((asset) => <a href={assetUrl(asset.id)} key={asset.id}><FileText size={15} /><span><strong>{asset.original_name}</strong><small>{formatBytes(asset.size)}</small></span><Download size={14} /></a>)}</div>}</section>}</>;
 }
 
 export default function ReviewPage() {

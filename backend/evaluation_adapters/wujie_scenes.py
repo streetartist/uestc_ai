@@ -29,8 +29,18 @@ LIBERO_TASKS = [
     ("libero_object", 0, "pick_up_the_alphabet_soup_and_place_it_in_the_basket",
      "物体操作：字母汤罐放入篮子", "intermediate", 600),
     ("libero_10", 0, "LIVING_ROOM_SCENE2_put_both_the_alphabet_soup_and_the_tomato_sauce_in_the_basket",
-     "组合任务：两件物品放入篮子", "challenge", 1000),
+     "组合任务：两件物品放入篮子", "challenge", 1200),
 ]
+
+LIBERO_REFERENCE_STEPS = (300, 300, 600, 700, 1100)
+LIBERO_COMPLETION_POINTS = (10, 10, 10, 15, 15)
+
+
+def libero_scored_scenes():
+    scenes = libero_scenes()
+    for scene, reference, count in zip(scenes, LIBERO_REFERENCE_STEPS, (1, 1, 2)):
+        scene["scoring"] = {"version": 2, "reference_steps": [reference] * count}
+    return scenes
 
 
 def libero_scenes(init_state_ids=(0, 1, 2), seeds=(42, 43, 44)):

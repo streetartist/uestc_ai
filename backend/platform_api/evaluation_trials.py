@@ -10,8 +10,11 @@ from .submission_access import can_view_submission
 
 
 def package_digest(path: Path) -> str:
+    digest = hashlib.sha256()
     with path.open("rb") as source:
-        return hashlib.file_digest(source, "sha256").hexdigest()
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def can_view_result(run) -> bool:
@@ -19,12 +22,14 @@ def can_view_result(run) -> bool:
     if not user:
         return False
     submission = run.submission_version.submission
+    if run.purpose == "final" and not run.submission_snapshot.get("results_published_at"):
+        return user.role in {"admin", "organizer", "reviewer"} and can_view_submission(submission, run.submission_version)
     if team_member(submission.team_id, user.id) or user.role in {"admin", "organizer"}:
         return True
     # Reviewers see only the result selected in a current formal submission.
     version = run.submission_version
     return user.role == "reviewer" and can_view_submission(submission, version) and (
-        (version.snapshot or {}).get("evaluation_run_id") == run.id or run.purpose == "submission"
+        (version.snapshot or {}).get("evaluation_run_id") == run.id or run.purpose in {"submission", "final"}
     )
 
 

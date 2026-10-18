@@ -11,6 +11,7 @@ from ..extensions import db
 from ..models import Competition, EvaluationRun, Problem, Registration, Review, Score, ScoreBatch, StagedSubmissionAsset, Submission, SubmissionAsset, SubmissionVersion, Team, Track, new_id
 from ..evaluation import adapters
 from ..evaluation_trials import can_view_result, selected_result_error
+from ..final_evaluation import required as final_required, final_run
 from ..ai_quotas import lock_problem
 from ..submission_schema import validate_submission_materials
 from ..submission_access import can_view_submission, can_view_work, can_download_asset
@@ -87,6 +88,7 @@ def public_work_payload(version: SubmissionVersion, include_content: bool = True
             "name": submission.problem.track.competition.name,
         },
         "view": "review" if private else "public",
+        "final_evaluation_required": final_required(submission.problem),
         "version": version.to_dict() if include_content and private else {
             "id": version.id,
             "submission_id": version.submission_id,
@@ -100,7 +102,8 @@ def public_work_payload(version: SubmissionVersion, include_content: bool = True
         data["assets"] = [asset.to_dict() for asset in version.assets if asset.id in publication.get("asset_ids", [])]
         if publication.get("metrics_public") is True:
             result = current_evaluation(version)
-            if result and result["status"] == "completed":
+            result_run = db.session.get(EvaluationRun, result["id"]) if result else None
+            if result and result["status"] == "completed" and (result_run.purpose != "final" or result_run.submission_snapshot.get("results_published_at")):
                 data["public_metrics"] = {
                     "metrics": result["metrics"],
                     "definitions": result.get("metric_definitions", []),
@@ -111,10 +114,26 @@ def public_work_payload(version: SubmissionVersion, include_content: bool = True
         result = current_evaluation(version)
         run = db.session.get(EvaluationRun, result["id"]) if result else None
         data["evaluation"] = result if run and can_view_result(run) else None
+        if final_required(submission.problem):
+            data["development_evaluation"] = development_evaluation(version)
+            final = final_run(version)
+            data["final_evaluation_status"] = ("awaiting_publication" if final and final.status == "completed"
+                and not final.submission_snapshot.get("results_published_at") else final.status if final else "pending")
     return data
 
 
+def development_evaluation(version):
+    if not final_required(version.submission.problem):
+        return None
+    selected_id = (version.snapshot or {}).get("evaluation_run_id")
+    run = db.session.get(EvaluationRun, selected_id) if selected_id else None
+    return run.to_dict() if run and run.purpose == "trial" and can_view_result(run) else None
+
+
 def current_evaluation(version: SubmissionVersion):
+    if final_required(version.submission.problem) or (version.snapshot or {}).get("final_frozen_at"):
+        run = final_run(version)
+        return run.to_dict() if run and run.status != "superseded" else None
     selected_id = (version.snapshot or {}).get("evaluation_run_id")
     if selected_id:
         selected = db.session.get(EvaluationRun, selected_id)
@@ -268,6 +287,8 @@ def submit_work():
         db.session.rollback()
         return jsonify({"error": "组织方尚未配置机械臂仿真环境与私有场景，请稍后提交。"}), 409
     submission = Submission.query.filter_by(problem_id=problem.id, team_id=team.id).populate_existing().first()
+    if submission and any((v.snapshot or {}).get("final_frozen_at") for v in submission.versions):
+        return jsonify({"error": "作品已冻结用于最终评测。"}), 409
     retained, retained_error = retained_assets(data, submission)
     if retained_error:
         return retained_error
@@ -275,8 +296,8 @@ def submit_work():
         validate_submission_materials(problem.submission_schema or {}, data, [*staged, *retained], status == "submitted", Path(current_app.config["UPLOAD_FOLDER"]))
     except ValueError as validation_error:
         return jsonify({"error": str(validation_error)}), 400
-    # Formal submission selects an already-completed private trial. It never
-    # queues another job or charges the team's testing budget.
+    # The selected trial records development evidence for the same package.
+    # Independent finals are dispatched by organizers after the deadline.
     if status == "submitted" and problem.evaluation_config:
         adapter = adapters().get(problem.evaluation_config["adapter"])
         if not adapter:
@@ -561,13 +582,25 @@ def save_review():
             return jsonify({"error": "evaluation must complete before review"}), 409
     try:
         scores = dict(data["scores"])
+        scores.pop("__code_review_passed", None)
         scoring = (version.submission.problem.scoring_config or {}).get("performance_scoring")
         if scoring:
             performance = evaluation.get("performance")
             if not performance or any(performance.get(key) != scoring[key] for key in ("preset", "criterion")):
                 return jsonify({"error": "正式结果缺少对应版本的自动表现分，请先完成测试。"}), 409
             scores[scoring["criterion"]] = performance["score"]
-        total_score = calculate_review_total(version.submission.problem, scores, data.get("total_score"))
+        pass_fail = (version.submission.problem.scoring_config or {}).get("code_review_mode") == "pass_fail"
+        if pass_fail:
+            if type(data.get("code_review_passed")) is not bool:
+                raise ValueError("请选择代码审阅通过或不通过。")
+            if not scoring:
+                raise ValueError("代码审阅通过制需要自动测评分。")
+            if not data["code_review_passed"] and not str(data.get("feedback_md", "")).strip():
+                raise ValueError("不通过时请填写具体原因。")
+            total_score = calculate_review_total(version.submission.problem, scores, data.get("total_score"))
+            scores["__code_review_passed"] = int(data["code_review_passed"])
+        else:
+            total_score = calculate_review_total(version.submission.problem, scores, data.get("total_score"))
     except (TypeError, ValueError) as error:
         return jsonify({"error": str(error)}), 400
     review = Review.query.filter_by(submission_version_id=version.id, reviewer_id=user.id).first()
@@ -635,6 +668,7 @@ def review_queue():
         "review_locked": is_review_locked(version.submission.problem.track.competition),
         "assets": [asset.to_dict() for asset in version.assets],
         "evaluation": current_evaluation(version),
+        "development_evaluation": development_evaluation(version),
         "reviewer_weight_percent": (
             weight_cache[version.submission.problem.track.competition_id][1].get(user.id)
             * (100 - external_weight_percent(version.submission.problem)) / 100
@@ -785,6 +819,10 @@ def leaderboard(competition_slug: str):
     result = []
 
     for version in query.order_by(SubmissionVersion.created_at.asc()).all():
+        if final_required(version.submission.problem):
+            final = final_run(version)
+            if not final or not final.submission_snapshot.get("results_published_at"):
+                continue
         score = combined_score(version)
         if score is None:
             continue

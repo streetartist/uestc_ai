@@ -1,0 +1,124 @@
+{
+  "scene_set_version": "libero-five-20261018-v4-budget2b",
+  "runtime": {
+    "image": "sha256:860486aa7bc272412ba73bdabbbbef6fdd9cb6213e0af8d7795433a87f837d51",
+    "agent_image": "sha256:923f54c25f6c7f15b59b35bbc062e452320c54dde8e599321ff55be70eb901a8",
+    "scenarios": [
+      {
+        "id": "libero-1",
+        "label": "抓取放置：黑碗放到盘子",
+        "difficulty": "beginner",
+        "suite": "libero_spatial",
+        "task_id": 2,
+        "task_name": "pick_up_the_black_bowl_from_table_center_and_place_it_on_the_plate",
+        "init_state_id": 0,
+        "seed": 42,
+        "max_steps": 600,
+        "scoring": {
+          "version": 2,
+          "reference_steps": [
+            300
+          ]
+        }
+      },
+      {
+        "id": "libero-2",
+        "label": "物体操作：字母汤罐放入篮子",
+        "difficulty": "intermediate",
+        "suite": "libero_object",
+        "task_id": 0,
+        "task_name": "pick_up_the_alphabet_soup_and_place_it_in_the_basket",
+        "init_state_id": 1,
+        "seed": 43,
+        "max_steps": 600,
+        "scoring": {
+          "version": 2,
+          "reference_steps": [
+            300
+          ]
+        }
+      },
+      {
+        "id": "libero-3",
+        "label": "组合任务：两件物品放入篮子",
+        "difficulty": "challenge",
+        "suite": "libero_10",
+        "task_id": 0,
+        "task_name": "LIVING_ROOM_SCENE2_put_both_the_alphabet_soup_and_the_tomato_sauce_in_the_basket",
+        "init_state_id": 2,
+        "seed": 44,
+        "max_steps": 1200,
+        "scoring": {
+          "version": 2,
+          "reference_steps": [
+            600,
+            600
+          ]
+        }
+      },
+      {
+        "id": "sort-groceries",
+        "label": "换物品入篮",
+        "difficulty": "challenge",
+        "suite": "libero_object",
+        "task_id": 0,
+        "task_name": "put_the_cream_cheese_box_and_the_tomato_sauce_can_in_the_basket",
+        "scene_asset": "sort-groceries",
+        "init_state_id": 0,
+        "seed": 81231,
+        "max_steps": 1400,
+        "scoring": {
+          "version": 2,
+          "reference_steps": [
+            700,
+            700
+          ]
+        }
+      },
+      {
+        "id": "table-setting",
+        "label": "组合放置",
+        "difficulty": "challenge",
+        "suite": "libero_spatial",
+        "task_id": 2,
+        "task_name": "place_the_black_bowl_on_the_plate_and_place_the_alphabet_soup_can_on_the_black_bowl",
+        "scene_asset": "table-setting",
+        "init_state_id": 0,
+        "seed": 81232,
+        "max_steps": 2200,
+        "scoring": {
+          "version": 2,
+          "reference_steps": [
+            1100,
+            1100
+          ]
+        }
+      }
+    ]
+  },
+  "evaluation_config": {
+    "adapter": "libero-agent-v1",
+    "task": "manipulation",
+    "max_team_runs": 3,
+    "resources": {
+      "cpus": 4,
+      "memory_mb": 2048,
+      "gpu": false,
+      "time_seconds": 7200,
+      "episodes": 5
+    },
+    "api": {
+      "enabled": true,
+      "max_calls": 500
+    },
+    "metrics": [
+      "task_success",
+      "action_count",
+      "execution_seconds",
+      "invalid_actions",
+      "completion_score",
+      "efficiency_score",
+      "automatic_score"
+    ]
+  }
+}

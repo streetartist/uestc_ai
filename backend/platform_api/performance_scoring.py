@@ -8,6 +8,7 @@ PRESETS = {
     "wujie-world-v1": ("minecraft-agent-v1", {"task_success", "exploration_progress"}),
     "wujie-arm-v1": ("robot-arm-agent-v1", {"task_success", "stable_grasps", "action_count"}),
     "wujie-libero-v1": ("libero-agent-v1", {"task_success"}),
+    "wujie-libero-v2": ("libero-agent-v1", {"completion_score", "efficiency_score", "automatic_score"}),
 }
 
 
@@ -25,7 +26,7 @@ def validate_performance_scoring(scoring, evaluation=None):
     return dict(scoring)
 
 
-def performance_result(scoring, adapter, episodes):
+def performance_result(scoring, adapter, episodes, episode_weights=None):
     if not scoring:
         return None
     validate_performance_scoring(scoring)
@@ -52,14 +53,29 @@ def performance_result(scoring, adapter, episodes):
             score = .7 * metrics["exploration_progress"] + .3 * metrics["task_success"]
         elif scoring["preset"] == "wujie-libero-v1":
             score = metrics["task_success"]
+        elif scoring["preset"] == "wujie-libero-v2":
+            if (metrics["completion_score"] > 60 or metrics["efficiency_score"] > 40
+                    or not math.isclose(metrics["automatic_score"], metrics["completion_score"] + metrics["efficiency_score"], abs_tol=1e-8)
+                    or metrics["efficiency_score"] > metrics["completion_score"] * 2 / 3 + 1e-8):
+                raise ValueError("LIBERO 完成分与效率分不一致。")
+            score = metrics["automatic_score"]
         else:
             efficiency = max(0, 1 - metrics["action_count"] / 600)
             score = .8 * metrics["task_success"] + .1 * metrics["stable_grasps"] + .1 * metrics["task_success"] * efficiency
         scores.append(score)
-    return {**scoring, "score": round(sum(scores) / len(scores), 6)}
+    if episode_weights is not None:
+        if (scoring["preset"] != "wujie-libero-v2" or len(episode_weights) != len(scores)
+                or any(type(w) not in (int, float) or not math.isfinite(w) or w <= 0 for w in episode_weights)):
+            raise ValueError("LIBERO 题目权重与完整测评结果不匹配。")
+        average = sum(score * weight for score, weight in zip(scores, episode_weights)) / sum(episode_weights)
+    else:
+        average = sum(scores) / len(scores)
+    return {**scoring, "score": average if scoring["preset"] == "wujie-libero-v2" else round(average, 6)}
 
 
 def validate_problem_scoring(config, evaluation, judging):
+    if config.get("final_evaluation_required") and evaluation.get("adapter") != "libero-agent-v1":
+        raise ValueError("独立最终评测配置目前仅用于 LIBERO。")
     scoring = config.get("performance_scoring")
     if not scoring:
         return

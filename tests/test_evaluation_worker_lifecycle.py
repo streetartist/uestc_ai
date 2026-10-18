@@ -12,6 +12,133 @@ import evaluation_worker as worker
 
 
 class WorkerLifecycleTests(unittest.TestCase):
+    def test_controller_deadline_remains_a_time_limit_in_worker_recovery(self):
+        progress = {'episodes': [], 'planned_episodes': 1,
+                    'interrupted_scene': None, 'reason': 'evaluation_time_limit'}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'partial-results.json').write_text(json.dumps(progress))
+            job = {'config': {'resources': {'episodes': 1}}}
+            result = worker.recover_libero_progress('https://example.test', job, root, 'execution_error')
+            self.assertEqual(result['reason'], 'evaluation_time_limit')
+            self.assertEqual(json.loads((root / 'partial-results.json').read_text())['reason'], 'evaluation_time_limit')
+            progress['reason'] = 'TimeoutError'
+            (root / 'partial-results.json').write_text(json.dumps(progress))
+            early = worker.recover_libero_progress('https://example.test', job, root, 'execution_error')
+            self.assertEqual(early['reason'], 'execution_error')
+
+    def test_libero_timeout_retains_completed_scenes_and_interrupted_evidence(self):
+        completed = {'scenario': {'id': 'bowl', 'label': 'Bowl', 'difficulty': 'beginner'},
+                     'metrics': {'task_success': 100}}
+        partial = {'episodes': [completed], 'planned_episodes': 2,
+                   'interrupted_scene': {'id': 'basket', 'label': 'Basket', 'difficulty': 'intermediate'},
+                   'reason': None}
+        uploaded, commands = [], []
+        elapsed = [0.0]
+
+        def mount(command, destination):
+            value = next(command[index + 1] for index, option in enumerate(command[:-1])
+                         if option == '--mount' and f'dst={destination}' in command[index + 1])
+            return Path(value.split('src=', 1)[1].split(',dst=', 1)[0])
+
+        def launch(command, **kwargs):
+            output = mount(command, '/output')
+            (output / 'partial-results.json').write_text(json.dumps(partial))
+            for name in ('trajectory.json', 'replay.gif', 'replay.mp4'):
+                (output / 'evidence' / '1' / name).write_bytes(b'completed evidence')
+            (output / 'evidence' / '2' / 'trajectory-steps.jsonl').write_text('{"step":1}\n{"step":')
+            if any('type=bind' in part and 'dst=/ipc' in part for part in command):
+                (mount(command, '/ipc') / 'agent.sock').touch()
+            return SimpleNamespace(returncode=0, poll=lambda: 0, wait=lambda **kwargs: 0)
+
+        def docker(command, **kwargs):
+            commands.append(command)
+            if command[:2] == ['docker', 'run']:
+                elapsed[0] = 61.0
+                raise worker.subprocess.TimeoutExpired(command, kwargs['timeout'])
+            return SimpleNamespace(returncode=0)
+
+        job = {'id': 'partial-run', 'lease_token': 'lease', 'asset_url': '/asset.zip',
+               'config': {'adapter': 'libero-agent-v1', 'task': 'manipulation',
+                          'resources': {'cpus': 2, 'memory_mb': 2048, 'gpu': False,
+                                        'time_seconds': 60, 'episodes': 2},
+                          'api': {'enabled': False, 'max_calls': 0}}}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scenes = root / 'scenes.json'; scenes.write_text('[]')
+            logs = root / 'retained'
+            with patch.object(worker, 'download', side_effect=lambda b, a, l, p: p.write_bytes(b'zip')), \
+                    patch.object(worker, 'heartbeat'), patch.object(worker.subprocess, 'Popen', side_effect=launch), \
+                    patch.object(worker.subprocess, 'run', side_effect=docker), \
+                    patch.object(worker.time, 'monotonic', side_effect=lambda: elapsed[0]), \
+                    patch.object(worker, 'upload_evidence_file', side_effect=lambda b, j, n, p: uploaded.append(n)):
+                result = worker.execute_isolated_agent('https://example.test/api', job,
+                    'sha256:' + 'a'*64, 'sha256:' + 'b'*64, str(scenes), '', '', str(logs))
+            expected = {**partial, 'reason': 'evaluation_time_limit'}
+            self.assertEqual(result, {'status': 'failed', 'error': 'evaluation time limit exceeded', 'partial_results': expected})
+            self.assertEqual(json.loads((logs / 'partial-results.json').read_text()), expected)
+            self.assertEqual(json.loads((logs / 'evidence' / '2' / 'trajectory.json').read_text())['steps'], [{'step': 1}])
+            self.assertEqual((logs / 'evidence' / '1' / 'replay.mp4').read_bytes(), b'completed evidence')
+        self.assertIn('scene-1-replay.mp4', uploaded)
+        self.assertIn('scene-2-trajectory.json', uploaded)
+        self.assertTrue(any(command[:4] == ['docker', 'stop', '--time', '25'] for command in commands))
+        self.assertEqual(sum(command[:3] == ['docker', 'rm', '-f'] for command in commands), 2)
+
+    def exercise_evidence_upload(self, failure_name, error):
+        episodes = [{'scenario': {'id': 'bowl', 'label': 'Bowl', 'difficulty': 'beginner'},
+                     'metrics': {'task_success': 100, 'action_count': 503}}]
+        uploaded = []
+
+        def mount(command, destination):
+            value = next(command[index + 1] for index, option in enumerate(command[:-1])
+                         if option == '--mount' and f'dst={destination}' in command[index + 1])
+            return Path(value.split('src=', 1)[1].split(',dst=', 1)[0])
+
+        def launch(command, **kwargs):
+            output = mount(command, '/output')
+            (output / 'result.json').write_text(json.dumps({'episodes': episodes}))
+            for name in ('replay.gif', 'trajectory.json', 'replay.mp4'):
+                (output / 'evidence' / '1' / name).write_bytes(b'evidence fixture')
+            if any('type=bind' in part and 'dst=/ipc' in part for part in command):
+                (mount(command, '/ipc') / 'agent.sock').touch()
+            return SimpleNamespace(returncode=0, poll=lambda: 0, wait=lambda **kwargs: 0)
+
+        def upload(base, job, name, path):
+            uploaded.append(name)
+            if name.endswith(failure_name):
+                raise error
+
+        job = {'id': 'optional-video', 'lease_token': 'private-lease', 'asset_url': '/asset.zip',
+               'config': {'adapter': 'libero-agent-v1', 'task': 'manipulation',
+                          'resources': {'cpus': 2, 'memory_mb': 2048, 'gpu': False,
+                                        'time_seconds': 60, 'episodes': 1},
+                          'api': {'enabled': False, 'max_calls': 0}}}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scenes = root / 'scenes.json'
+            scenes.write_text('[]')
+            logs = root / 'retained'
+            with patch.object(worker, 'download', side_effect=lambda base, asset, lease, destination: destination.write_bytes(b'zip fixture')), \
+                    patch.object(worker, 'heartbeat'), \
+                    patch.object(worker.subprocess, 'Popen', side_effect=launch), \
+                    patch.object(worker.subprocess, 'run', return_value=SimpleNamespace(returncode=0)), \
+                    patch.object(worker, 'upload_evidence_file', side_effect=upload):
+                result = worker.execute_isolated_agent('https://example.test/api', job,
+                    'sha256:' + 'a'*64, 'sha256:' + 'b'*64, str(scenes), '', '', str(logs))
+            self.assertEqual(result, {'status': 'completed', 'episodes': episodes})
+            self.assertEqual(uploaded, ['scene-1-replay.gif', 'scene-1-trajectory.json', 'scene-1-replay.mp4'])
+            self.assertEqual((logs / 'evidence' / '1' / 'replay.mp4').read_bytes(), b'evidence fixture')
+
+    def test_optional_mp4_upload_failure_preserves_scores_and_retains_video(self):
+        for error in (OSError('connection interrupted'), ValueError('trusted evidence exceeds 25 MB')):
+            with self.subTest(error=type(error).__name__):
+                self.exercise_evidence_upload('replay.mp4', error)
+
+    def test_required_gif_and_trajectory_upload_failures_keep_existing_behavior(self):
+        for name in ('replay.gif', 'trajectory.json'):
+            with self.subTest(name=name), self.assertRaisesRegex(OSError, 'required evidence unavailable'):
+                self.exercise_evidence_upload(name, OSError('required evidence unavailable'))
+
     def assert_agent_termination(self, adapter, phase):
         """Exercise phase boundaries without waiting for a real minute in each case."""
         clock = [100.0]

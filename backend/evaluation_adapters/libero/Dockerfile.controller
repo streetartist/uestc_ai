@@ -1,5 +1,5 @@
 FROM python:3.11-slim-bookworm
-RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources && apt-get -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 install -y --no-install-recommends libosmesa6 libgl1 libglib2.0-0 gcc libc6-dev linux-libc-dev git && rm -rf /var/lib/apt/lists/*
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources && apt-get -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 install -y --no-install-recommends libosmesa6 libgl1 libglib2.0-0 gcc libc6-dev linux-libc-dev git ffmpeg && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir robosuite==1.4.0 mujoco==2.3.7 numpy==1.26.4 Pillow==11.3.0 bddl==1.0.1 future==1.0.0 matplotlib==3.8.4 cloudpickle==3.1.1 gym==0.25.2 easydict==1.13 pyyaml==6.0.2 opencv-python-headless==4.10.0.84 termcolor==2.4.0
 ARG LIBERO_REV=8f1084e3132a39270c3a13ebe37270a43ece2a01

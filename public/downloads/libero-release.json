@@ -1,0 +1,14 @@
+{
+  "version": "libero-20261018-final",
+  "practice": {
+    "url": "https://github.com/Takamatsu-Hikaru/uestc_ai/releases/download/libero-20261018-final/wujie-libero-practice-20261018-final.tar.gz",
+    "bytes": 1259403115,
+    "sha256": "b8fe01bdbc0ea2445bbf4f50d932f652d2059de3b48317d324f70b92eb88a22a",
+    "image": "sha256:d1aee3a87c1ec7da9d365c6af3f4ae8ebdb15a0b747e2b912520af1c9e682b90"
+  },
+  "starter": {
+    "url": "https://github.com/Takamatsu-Hikaru/uestc_ai/releases/download/libero-20261018-final/wujie-arm-starter.zip",
+    "bytes": 51733,
+    "sha256": "707caaf0a43e0abee053f0bde2eec2ffaa026150ba0d5de86246799f6f7e40ad"
+  }
+}

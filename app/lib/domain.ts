@@ -35,7 +35,7 @@ export type Problem = {
   source_url?: string | null;
   submission_schema: SubmissionSchema;
   judging_schema: { rubric?: Record<string, number> };
-  scoring_config: { external_weight_percent?: number; review_score_mode?: "sum" | "weighted"; external_score_label?: string; online_score_label?: string; performance_scoring?: { preset: string; criterion: string } };
+  scoring_config: { final_evaluation_required?: boolean; code_review_mode?: "pass_fail"; external_weight_percent?: number; review_score_mode?: "sum" | "weighted"; external_score_label?: string; online_score_label?: string; performance_scoring?: { preset: string; criterion: string } };
   evaluation_config: EvaluationConfig;
 };
 
@@ -102,13 +102,18 @@ export type EvaluationRun = {
   dispatch?: { state: string; label: string; detail: string | null; ahead?: number | null } | null;
   id: string;
   submission_id: string;
-  purpose: "trial" | "submission";
+  purpose: "trial" | "submission" | "final";
+  result_scope?: "development" | "final" | "submission";
+  scene_set_version?: string | null;
+  scene_set_sha256?: string | null;
+  frozen_at?: string | null;
   package_name: string | null;
   package_sha256: string | null;
   adapter: string;
   status: "queued" | "running" | "completed" | "failed" | "superseded";
   attempts: number;
   api_calls_used: number;
+  api_calls_limit?: number;
   time_seconds: number;
   metrics: Record<string, number>;
   metric_definitions: EvaluationAdapter["metrics"];
@@ -119,6 +124,13 @@ export type EvaluationRun = {
     metrics: Record<string, number>;
     objectives?: Array<{ id: string; label: string; completed: boolean }>;
   }>;
+  budget_termination_reason?: "evaluation_time_limit" | "api_call_limit" | null;
+  partial_results?: {
+    episodes: Array<{ scenario: { id: string; label: string; difficulty: "beginner" | "intermediate" | "challenge" }; metrics: Record<string, number> }>;
+    planned_episodes: number;
+    interrupted_scene: { id: string; label: string; difficulty: "beginner" | "intermediate" | "challenge" } | null;
+    reason: "evaluation_time_limit" | "execution_error";
+  } | null;
   error: string | null;
   created_at: string;
   started_at: string | null;
@@ -241,6 +253,9 @@ export type PublicWork = Submission & {
   competition: Pick<Competition, "id" | "slug" | "name">;
   version: SubmissionVersion;
   evaluation?: EvaluationRun | null;
+  development_evaluation?: EvaluationRun | null;
+  final_evaluation_required?: boolean;
+  final_evaluation_status?: "pending" | "queued" | "running" | "failed" | "awaiting_publication" | "completed";
   evaluation_config?: EvaluationConfig;
 };
 
@@ -290,6 +305,9 @@ export type ReviewQueueItem = SubmissionVersion & {
   reviewer_weight_percent?: number | null;
   review_locked: boolean;
   evaluation?: EvaluationRun | null;
+  development_evaluation?: EvaluationRun | null;
+  final_evaluation_required?: boolean;
+  final_evaluation_status?: "pending" | "queued" | "running" | "failed" | "awaiting_publication" | "completed";
   my_review: null | {
     id: string;
     scores: Record<string, number>;

@@ -1,0 +1,5 @@
+# Build with an organizer-only context containing scenes/manifest.json and its assets.
+# LIBERO_CONTROLLER_IMAGE must be the pinned controller image built from this revision.
+ARG LIBERO_CONTROLLER_IMAGE
+FROM ${LIBERO_CONTROLLER_IMAGE}
+COPY scenes/ /opt/uestc-libero-scenes/

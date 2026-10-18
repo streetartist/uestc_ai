@@ -7,7 +7,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 from ..ai_quotas import lock_problem
 from ..evaluation import adapters, evaluation_budget
-from ..evaluation_trials import package_digest
+from ..evaluation_trials import package_digest, can_view_result
 from ..extensions import db
 from ..models import EvaluationRun, Problem, Registration, Submission, SubmissionVersion, Team, new_id, utcnow
 from ..security import current_user, require_user, team_member
@@ -34,8 +34,9 @@ def team_trials(problem_id):
         return jsonify({"error": "team belongs to a different competition"}), 400
     runs = EvaluationRun.query.join(SubmissionVersion).join(Submission).filter(
         EvaluationRun.problem_id == problem_id, Submission.team_id == team_id,
+        EvaluationRun.purpose != "final",
     ).order_by(EvaluationRun.created_at.desc()).all()
-    response = jsonify([run.to_dict() for run in runs])
+    response = jsonify([run.to_dict() for run in runs if can_view_result(run)])
     response.headers["Cache-Control"] = "private, no-store"
     return response
 
